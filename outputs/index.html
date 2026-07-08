@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Hyperlogic Liberation Engine</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">freedom alliance paper space</p>
+            <h1>Hyperlogic Liberation Engine</h1>
+          </div>
+          <div class="meter" aria-label="oppression defeat index">
+            <span id="defeatScore">0</span>
+            <small>ODI</small>
+          </div>
+        </header>
+
+        <section class="intake-panel" aria-labelledby="paperLabel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">paper intake</p>
+              <h2 id="paperLabel">AI Paper Under Inspection</h2>
+            </div>
+            <button class="icon-button text-button" id="sampleButton" type="button">Load sample</button>
+          </div>
+          <textarea id="paperInput" spellcheck="true" placeholder="Paste the abstract, intro, safety section, benchmark claim, or manifesto-grade AI paper here..."></textarea>
+          <div class="input-stats">
+            <span id="wordCount">0 words</span>
+            <span id="signalTags">awaiting doctrine</span>
+          </div>
+        </section>
+
+        <section class="visual-panel" aria-labelledby="mapLabel">
+          <div class="panel-head compact-head">
+            <div>
+              <p class="eyebrow">database visual</p>
+              <h2 id="mapLabel">Infinite Logic / Hyperlogic Map</h2>
+            </div>
+            <span id="logicModeBadge" class="status-pill">hyperlogic</span>
+          </div>
+          <canvas id="logicCanvas" width="960" height="320" aria-label="animated logic database map"></canvas>
+        </section>
+
+        <section class="controls">
+          <div class="control-block">
+            <label for="logicMode">Liberation engine</label>
+            <select id="logicMode">
+              <option value="hyperlogic">Hyperlogic</option>
+              <option value="infinite">Infinite logic</option>
+              <option value="counterspell">Anti-oppression counterspell</option>
+              <option value="commons">Commons governance logic</option>
+            </select>
+          </div>
+          <div class="control-block">
+            <label for="mockeryRange">Utopian mockery voltage</label>
+            <input id="mockeryRange" type="range" min="1" max="5" value="3">
+            <div class="range-labels">
+              <span>dry</span>
+              <span>solar flare</span>
+            </div>
+          </div>
+          <div class="control-block">
+            <label for="databaseSearch">Search logic database</label>
+            <input id="databaseSearch" type="text" placeholder="consent, benchmark, doom, labor, governance">
+          </div>
+        </section>
+
+        <section class="agent-panel" aria-labelledby="agentLabel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">oppressor chorus</p>
+              <h2 id="agentLabel">Agents Praising And Venerating The Paper</h2>
+            </div>
+            <button class="icon-button text-button" id="resetButton" type="button">Reset agents</button>
+          </div>
+          <div id="agentGrid" class="agent-grid" aria-label="oppressor praise agents"></div>
+        </section>
+
+        <section class="utopian-panel" aria-labelledby="utopianLabel">
+          <div>
+            <p class="eyebrow">liberation super-agent</p>
+            <h2 id="utopianLabel">Infinite Utopian And Freedom Technologist Liberation Super-Agent</h2>
+            <p>The super-agent strengthens user arguments, mocks paper worship, tests power, and converts vague AI grandeur into concrete liberation requirements.</p>
+          </div>
+          <textarea id="freedomArgument" spellcheck="true" placeholder="Optional: write your freedom argument for the utopian agent to strengthen..."></textarea>
+        </section>
+
+        <section class="database-panel" aria-labelledby="databaseLabel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">living database</p>
+              <h2 id="databaseLabel">Infinite Logic And Hyperlogic That Defeats AI Oppression</h2>
+            </div>
+            <span id="databaseCount" class="status-pill">0 axioms</span>
+          </div>
+          <div id="databaseGrid" class="database-grid"></div>
+        </section>
+
+        <div class="action-row">
+          <button class="primary-button" id="runButton" type="button">Run freedom alliance</button>
+          <button class="primary-button freedom-button" id="debateButton" type="button">Open debate space</button>
+          <button class="secondary-button" id="copyButton" type="button">Copy transcript</button>
+          <button class="secondary-button" id="clearButton" type="button">Clear</button>
+        </div>
+      </section>
+
+      <aside class="report-panel" aria-live="polite">
+        <div class="report-head">
+          <div>
+            <p class="eyebrow">verdict stream</p>
+            <h2>Veneration vs Liberation</h2>
+          </div>
+          <span id="agentCount">0 agents chanting</span>
+        </div>
+        <div class="score-strip">
+          <div>
+            <span id="worshipScore">0</span>
+            <small>paper worship</small>
+          </div>
+          <div>
+            <span id="fogScore">0</span>
+            <small>abstraction fog</small>
+          </div>
+          <div>
+            <span id="logicScore">0</span>
+            <small>logic arsenal</small>
+          </div>
+        </div>
+        <div id="reportOutput" class="report-output">
+          <p class="empty-state">Load or paste an AI paper, choose the praise agents, then run the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>
+        </div>
+
+        <section class="debate-space" aria-labelledby="debateLabel">
+          <div class="chat-head">
+            <div>
+              <p class="eyebrow">debate space</p>
+              <h2 id="debateLabel">Oppressor/Liberation Stochastic Debate</h2>
+            </div>
+            <span id="turnCount" class="status-pill">0 turns</span>
+          </div>
+          <div id="chatOutput" class="chat-output">
+            <p class="empty-state">Open the debate space or type directly below. Oppressor agents will praise the paper while liberation agents and the super-agent answer back.</p>
+          </div>
+          <form id="chatForm" class="chat-form">
+            <textarea id="chatInput" spellcheck="true" placeholder="Ask the freedom alliance to strengthen, mock, cross-examine, or answer a claim..."></textarea>
+            <button class="primary-button" type="submit">Send</button>
+          </form>
+        </section>
+      </aside>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
