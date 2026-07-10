@@ -734,7 +734,7 @@ function chatMessage(kind, speaker, text) {
 
 function renderChat() {
   if (!chatTurns.length) {
-    chatOutput.innerHTML = `<p class="empty-state">Open the debate space or type directly below. Oppressor agents will praise the paper while liberation agents and the super-agent answer back.</p>`;
+    chatOutput.innerHTML = `<p class="empty-state">Type a message and press Send to start chat, or open the debate space for an automatic transcript.</p>`;
   } else {
     chatOutput.innerHTML = chatTurns.map((turn) => `
       <div class="message ${escapeHtml(turn.kind)}">
@@ -745,6 +745,11 @@ function renderChat() {
     chatOutput.scrollTop = chatOutput.scrollHeight;
   }
   turnCount.textContent = `${chatTurns.length} turns`;
+}
+
+function ensureChatStarted() {
+  if (chatTurns.length) return;
+  chatTurns.push(chatMessage("utopian", "Freedom Alliance", "Chat opened. Send a message, call the freedom super-agent, or invite an oppressor agent to expose its argument."));
 }
 
 function focusDebateSpace() {
@@ -817,8 +822,10 @@ async function submitUserChat(event) {
   const text = chatInput.value.trim();
   if (!text) return;
   chatInput.value = "";
+  ensureChatStarted();
   chatTurns.push(chatMessage("user", "User", text));
   renderChat();
+  focusDebateSpace();
   setActionStatus(responseMode === "freedom" ? "summoning super-agent" : responseMode === "oppressor" ? "summoning oppressor" : "openai replying");
 
   try {
