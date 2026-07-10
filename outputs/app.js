@@ -281,6 +281,12 @@ const logicMode = document.querySelector("#logicMode");
 const logicModeBadge = document.querySelector("#logicModeBadge");
 const mockeryRange = document.querySelector("#mockeryRange");
 const databaseSearch = document.querySelector("#databaseSearch");
+const useOpenAI = document.querySelector("#useOpenAI");
+const openaiModel = document.querySelector("#openaiModel");
+const openaiKey = document.querySelector("#openaiKey");
+const openaiStatus = document.querySelector("#openaiStatus");
+const saveOpenAIButton = document.querySelector("#saveOpenAIButton");
+const forgetOpenAIButton = document.querySelector("#forgetOpenAIButton");
 const agentGrid = document.querySelector("#agentGrid");
 const resetButton = document.querySelector("#resetButton");
 const freedomArgument = document.querySelector("#freedomArgument");
@@ -306,9 +312,101 @@ const agentCount = document.querySelector("#agentCount");
 
 let chatTurns = [];
 
+const openAIStorageKeys = {
+  apiKey: "clusterfuckularity.openai.apiKey",
+  model: "clusterfuckularity.openai.model",
+  enabled: "clusterfuckularity.openai.enabled"
+};
+
+const openAIDeveloperPrompt = `You power Clusterfuckularity, a satirical but intellectually serious AI paper debate app.
+Oppressor agents praise and venerate the paper from their own distorted worldview.
+Liberation agents and the Infinite Utopian And Freedom Technologist Liberation Super-Agent critique, mock, and defeat AI oppression using consent, exit rights, open tools, plural futures, labor accountability, and shared governance.
+Return strict JSON only. Do not include markdown fences.`;
+
 function setActionStatus(message) {
   if (!actionStatus) return;
   actionStatus.textContent = message;
+}
+
+function storageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function storageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // The app still works with local fallback if storage is unavailable.
+  }
+}
+
+function storageRemove(key) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore restricted storage contexts.
+  }
+}
+
+function updateOpenAIStatus(message, state = "") {
+  if (!openaiStatus) return;
+  openaiStatus.textContent = message;
+  openaiStatus.classList.toggle("online", state === "online");
+  openaiStatus.classList.toggle("error", state === "error");
+}
+
+function loadOpenAISettings() {
+  const savedKey = storageGet(openAIStorageKeys.apiKey);
+  const savedModel = storageGet(openAIStorageKeys.model);
+  const enabled = storageGet(openAIStorageKeys.enabled) === "true";
+  if (savedModel) openaiModel.value = savedModel;
+  useOpenAI.checked = Boolean(enabled && savedKey);
+  openaiKey.value = savedKey ? "••••••••••••••••" : "";
+  updateOpenAIStatus(savedKey && useOpenAI.checked ? "openai ready" : "local fallback", savedKey && useOpenAI.checked ? "online" : "");
+}
+
+function saveOpenAISettings() {
+  const enteredKey = openaiKey.value.trim();
+  if (enteredKey && !enteredKey.includes("•")) {
+    storageSet(openAIStorageKeys.apiKey, enteredKey);
+  }
+  storageSet(openAIStorageKeys.model, openaiModel.value.trim() || "gpt-5");
+  storageSet(openAIStorageKeys.enabled, String(useOpenAI.checked));
+  loadOpenAISettings();
+}
+
+function forgetOpenAISettings() {
+  storageRemove(openAIStorageKeys.apiKey);
+  storageRemove(openAIStorageKeys.model);
+  storageRemove(openAIStorageKeys.enabled);
+  openaiKey.value = "";
+  openaiModel.value = "gpt-5";
+  useOpenAI.checked = false;
+  updateOpenAIStatus("local fallback");
+}
+
+function getOpenAISettings() {
+  return {
+    enabled: useOpenAI.checked,
+    apiKey: storageGet(openAIStorageKeys.apiKey),
+    model: openaiModel.value.trim() || storageGet(openAIStorageKeys.model) || "gpt-5"
+  };
+}
+
+function extractOpenAIText(data) {
+  if (typeof data.output_text === "string") return data.output_text;
+  const chunks = [];
+  (data.output || []).forEach((item) => {
+    (item.content || []).forEach((content) => {
+      if (typeof content.text === "string") chunks.push(content.text);
+      if (typeof content.output_text === "string") chunks.push(content.output_text);
+    });
+  });
+  return chunks.join("\n").trim();
 }
 
 function words(text) {
@@ -384,6 +482,133 @@ function renderDatabase() {
   updateStats();
 }
 
+function selectedLogicName() {
+  return logicMode.options[logicMode.selectedIndex]?.text || "Hyperlogic";
+}
+
+function getActiveAgentPayload() {
+  return debateAgentKeys().map((key) => {
+    const agent = agents[key];
+    return {
+      key,
+      name: agent.name,
+      line: agent.line,
+      triggers: agent.triggers,
+      praise: agent.praise,
+      weakness: agent.weakness
+    };
+  });
+}
+
+function getLiberationAgentPayload() {
+  return liberationAgents.map((agent) => ({
+    name: agent.name,
+    stance: agent.stance,
+    move: agent.move
+  }));
+}
+
+function getAxiomPayload() {
+  return debateAxioms().map((axiom) => ({
+    id: axiom.id,
+    title: axiom.title,
+    tags: axiom.tags,
+    text: axiom.text
+  }));
+}
+
+async function callAllianceAI(mode, userMessage = "") {
+  const settings = getOpenAISettings();
+  if (!settings.enabled || !settings.apiKey) {
+    throw new Error("OpenAI is not enabled or no key is saved.");
+  }
+
+  const formatInstruction = mode === "report"
+    ? `Return JSON with this shape:
+{"status":"ok","reportCards":[{"title":"...","body":"..."}],"chatTurns":[{"kind":"praise|ally|utopian","speaker":"...","text":"..."}]}
+Include 4-8 reportCards and 4-8 chatTurns.`
+    : `Return JSON with this shape:
+{"status":"ok","chatTurns":[{"kind":"praise|ally|utopian","speaker":"...","text":"..."}]}
+Include 8-14 turns. Oppressor turns use kind "praise"; liberation allies use "ally"; the super-agent uses "utopian".`;
+
+  const context = {
+    mode,
+    paper: paperInput.value.trim() || sample,
+    userArgument: freedomArgument.value.trim(),
+    logicMode: selectedLogicName(),
+    mockery: Number(mockeryRange.value),
+    activeAgents: getActiveAgentPayload(),
+    liberationAgents: getLiberationAgentPayload(),
+    axioms: getAxiomPayload(),
+    userMessage
+  };
+
+  updateOpenAIStatus("calling openai", "online");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      input: [
+        { role: "developer", content: openAIDeveloperPrompt },
+        { role: "user", content: `${formatInstruction}\n\nContext JSON:\n${JSON.stringify(context, null, 2)}` }
+      ],
+      max_output_tokens: mode === "report" ? 2400 : 2200
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    updateOpenAIStatus("openai error", "error");
+    throw new Error(data.error?.message || `OpenAI returned ${response.status}`);
+  }
+
+  const text = extractOpenAIText(data);
+  try {
+    const parsed = JSON.parse(text);
+    updateOpenAIStatus("openai ready", "online");
+    return parsed;
+  } catch {
+    updateOpenAIStatus("json fallback", "error");
+    throw new Error("OpenAI returned non-JSON output.");
+  }
+}
+
+function renderAiReport(data) {
+  const cards = Array.isArray(data.reportCards) ? data.reportCards : [];
+  if (!cards.length) throw new Error("OpenAI report had no cards.");
+  reportOutput.innerHTML = cards.map((card) => `
+    <article class="report-card">
+      <h3>${escapeHtml(card.title || "Freedom Alliance Finding")}</h3>
+      <p>${escapeHtml(card.body || "")}</p>
+    </article>
+  `).join("");
+
+  if (Array.isArray(data.chatTurns) && data.chatTurns.length) {
+    chatTurns = data.chatTurns.map((turn) => chatMessage(
+      ["praise", "ally", "utopian", "user"].includes(turn.kind) ? turn.kind : "utopian",
+      turn.speaker || "Freedom Alliance",
+      turn.text || ""
+    ));
+    renderChat();
+  }
+}
+
+function renderAiChat(data, replace = true) {
+  const turns = Array.isArray(data.chatTurns) ? data.chatTurns : [];
+  if (!turns.length) throw new Error("OpenAI debate had no turns.");
+  const renderedTurns = turns.map((turn) => chatMessage(
+    ["praise", "ally", "utopian", "user"].includes(turn.kind) ? turn.kind : "utopian",
+    turn.speaker || "Freedom Alliance",
+    turn.text || ""
+  ));
+  chatTurns = replace ? renderedTurns : [...chatTurns, ...renderedTurns];
+  renderChat();
+}
+
 function updateStats() {
   const text = paperInput.value;
   const wordTotal = words(text).length;
@@ -438,8 +663,17 @@ function utopianVoice() {
   return `${engineLine()} The ${superAgent.name} ${mockery}.\n\n${strengthenedArgument()}`;
 }
 
-function buildReport() {
+async function buildReport() {
   setActionStatus("summoning");
+  try {
+    const data = await callAllianceAI("report");
+    renderAiReport(data);
+    setActionStatus("openai alliance summoned");
+    return;
+  } catch (error) {
+    setActionStatus("local alliance fallback");
+  }
+
   const text = paperInput.value.trim() || sample;
 
   const active = debateAgentKeys();
@@ -532,8 +766,18 @@ function superMove(prompt = "") {
   return chatMessage("utopian", superAgent.name, `${strengthenedArgument(prompt)}\n\nResponse: ${principle} The oppressor praise fails when it cannot show consent, exit rights, repair, plural governance, and a future people can refuse without punishment.`);
 }
 
-function openDebateSpace() {
+async function openDebateSpace() {
   setActionStatus("opening debate");
+  try {
+    const data = await callAllianceAI("debate");
+    renderAiChat(data, true);
+    focusDebateSpace();
+    setActionStatus("openai debate open");
+    return;
+  } catch (error) {
+    setActionStatus("local debate fallback");
+  }
+
   const prompt = paperInput.value.trim() || sample;
   const rounds = Math.max(3, Math.min(7, debateAgentKeys().length + 1));
   chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Oppressor agents will venerate the paper; liberation agents and the super-agent will answer with infinite logic and hyperlogic.")];
@@ -547,23 +791,32 @@ function openDebateSpace() {
   setActionStatus("debate open");
 }
 
-function summonFreedomAlliance() {
-  buildReport();
-  if (!chatTurns.length) openDebateSpace();
+async function summonFreedomAlliance() {
+  await buildReport();
+  if (!chatTurns.length) await openDebateSpace();
   reportOutput.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function submitUserChat(event) {
+async function submitUserChat(event) {
   event.preventDefault();
   const text = chatInput.value.trim();
   if (!text) return;
   chatInput.value = "";
   chatTurns.push(chatMessage("user", "User", text));
-  if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
-  chatTurns.push(liberationMove(text));
-  chatTurns.push(superMove(text));
   renderChat();
-  setActionStatus("reply generated");
+  setActionStatus("openai replying");
+
+  try {
+    const data = await callAllianceAI("debate", text);
+    renderAiChat(data, false);
+    setActionStatus("openai reply generated");
+  } catch (error) {
+    if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
+    chatTurns.push(liberationMove(text));
+    chatTurns.push(superMove(text));
+    renderChat();
+    setActionStatus("local reply generated");
+  }
 }
 
 function copyTranscript() {
@@ -673,6 +926,10 @@ paperInput.addEventListener("input", updateStats);
 logicMode.addEventListener("change", updateStats);
 mockeryRange.addEventListener("input", updateStats);
 databaseSearch.addEventListener("input", renderDatabase);
+saveOpenAIButton.addEventListener("click", saveOpenAISettings);
+forgetOpenAIButton.addEventListener("click", forgetOpenAISettings);
+useOpenAI.addEventListener("change", saveOpenAISettings);
+openaiModel.addEventListener("change", saveOpenAISettings);
 chatForm.addEventListener("submit", submitUserChat);
 copyButton.addEventListener("click", copyTranscript);
 clearButton.addEventListener("click", clearApp);
@@ -681,6 +938,7 @@ window.addEventListener("resize", resizeCanvas);
 renderAgents();
 renderDatabase();
 renderChat();
+loadOpenAISettings();
 resizeCanvas();
 requestAnimationFrame(drawCanvas);
 

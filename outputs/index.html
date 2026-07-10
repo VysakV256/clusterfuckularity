@@ -70,6 +70,33 @@
           </div>
         </section>
 
+        <section class="openai-panel" aria-labelledby="openaiLabel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">live model engine</p>
+              <h2 id="openaiLabel">OpenAI Agent Power</h2>
+              <p>Use OpenAI for the freedom alliance, debate space, and chat replies. The API key is stored only in this browser.</p>
+            </div>
+            <span id="openaiStatus" class="status-pill">local fallback</span>
+          </div>
+          <div class="openai-controls">
+            <label class="checkbox-label openai-toggle">
+              <input id="useOpenAI" type="checkbox">
+              <span>Use OpenAI agents</span>
+            </label>
+            <div class="control-block">
+              <label for="openaiModel">Model</label>
+              <input id="openaiModel" type="text" value="gpt-5" autocomplete="off">
+            </div>
+            <div class="control-block api-key-block">
+              <label for="openaiKey">API key</label>
+              <input id="openaiKey" type="password" placeholder="sk-..." autocomplete="off">
+            </div>
+            <button class="secondary-button" id="saveOpenAIButton" type="button">Save key</button>
+            <button class="secondary-button" id="forgetOpenAIButton" type="button">Forget</button>
+          </div>
+        </section>
+
         <section class="agent-panel" aria-labelledby="agentLabel">
           <div class="panel-head">
             <div>

@@ -56,6 +56,7 @@ input {
 .intake-panel,
 .visual-panel,
 .controls,
+.openai-panel,
 .agent-panel,
 .utopian-panel,
 .database-panel,
@@ -125,6 +126,7 @@ h2 {
 
 .intake-panel,
 .visual-panel,
+.openai-panel,
 .agent-panel,
 .utopian-panel,
 .database-panel,
@@ -208,6 +210,18 @@ textarea {
   padding: 14px;
 }
 
+.openai-controls {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(120px, 0.7fr) minmax(220px, 1.4fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.openai-toggle {
+  min-height: 42px;
+  align-items: center;
+}
+
 .control-block {
   display: flex;
   flex-direction: column;
@@ -219,8 +233,17 @@ textarea {
   font-weight: 900;
 }
 
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
 select,
-input[type="text"] {
+input[type="text"],
+input[type="password"] {
   width: 100%;
   min-height: 42px;
   border: 1px solid var(--line);
@@ -398,6 +421,18 @@ button {
   font-weight: 950;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.status-pill.online {
+  border-color: var(--green);
+  background: #effcf6;
+  color: var(--green);
+}
+
+.status-pill.error {
+  border-color: var(--red);
+  background: #fff0eb;
+  color: var(--red);
 }
 
 .action-status {
@@ -585,6 +620,7 @@ button {
   .topbar,
   .panel-head,
   .utopian-panel,
+  .openai-controls,
   .controls {
     grid-template-columns: 1fr;
   }
