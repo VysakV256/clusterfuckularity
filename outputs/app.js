@@ -322,6 +322,7 @@ const openAIStorageKeys = {
 const openAIDeveloperPrompt = `You power Clusterfuckularity, a satirical but intellectually serious AI paper debate app.
 Oppressor agents praise and venerate the paper from their own distorted worldview.
 Liberation agents and the Infinite Utopian And Freedom Technologist Liberation Super-Agent critique, mock, and defeat AI oppression using consent, exit rights, open tools, plural futures, labor accountability, and shared governance.
+Agents must actively engage the actual paper text and latest user message. Do not use canned generic responses. Each agent should reveal its priors, quote or paraphrase a concrete claim, explain what that claim implies under its worldview, and then make a specific move.
 Return strict JSON only. Do not include markdown fences.`;
 
 function setActionStatus(message) {
@@ -442,6 +443,84 @@ function sampleOne(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+function normalizeWhitespace(text = "") {
+  return String(text).replace(/\s+/g, " ").trim();
+}
+
+function splitClaims(text = "") {
+  const clean = normalizeWhitespace(text || paperInput.value || sample);
+  const claims = clean
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((claim) => claim.trim())
+    .filter((claim) => claim.length > 24)
+    .slice(0, 14);
+  return claims.length ? claims : [clean || sample];
+}
+
+function termHits(text = "", terms = []) {
+  const lower = text.toLowerCase();
+  return terms.filter((term) => lower.includes(term.toLowerCase()));
+}
+
+function scoreClaimForTerms(claim, terms = []) {
+  const lower = claim.toLowerCase();
+  return terms.reduce((score, term) => score + (lower.includes(term.toLowerCase()) ? 2 : 0), 0) + Math.min(3, words(claim).length / 18);
+}
+
+function strongestClaim(text, terms = []) {
+  const claims = splitClaims(text);
+  return claims
+    .map((claim, index) => ({ claim, score: scoreClaimForTerms(claim, terms) + (claims.length - index) * 0.02 }))
+    .sort((a, b) => b.score - a.score)[0]?.claim || claims[0];
+}
+
+function strongestAxiom(text = "") {
+  const haystack = normalizeWhitespace(text);
+  const scored = debateAxioms()
+    .map((axiom) => ({
+      axiom,
+      score: scoreClaimForTerms(haystack, axiom.tags) + scoreClaimForTerms(haystack, [axiom.title])
+    }))
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.score > 0 ? scored[0].axiom : sampleOne(debateAxioms());
+}
+
+function agentPrior(agent) {
+  const priors = [
+    `my prior is that ${agent.line.charAt(0).toLowerCase()}${agent.line.slice(1)}`,
+    `I treat ${agent.triggers.slice(0, 3).join(", ")} as proof that authority is becoming technical`,
+    `I assume governance is cleaner when the paper's preferred abstraction wins`
+  ];
+  return sampleOne(priors);
+}
+
+function implicationForAgent(agent, claim, hits) {
+  if (hits.length) {
+    return `The claim lights up ${hits.join(", ")}, so I read it as permission to move power from public argument into ${hits[0]}-shaped machinery.`;
+  }
+  if (/should|must|need|require|argue|propose/i.test(claim)) {
+    return "It makes a normative demand while wearing technical clothing, which is exactly where my worldview likes to hide.";
+  }
+  if (/outperform|improve|increase|scale|efficient/i.test(claim)) {
+    return "It converts improvement into legitimacy before asking who pays for the improvement.";
+  }
+  return "It leaves enough ambiguity for authority to walk through with excellent posture.";
+}
+
+function liberationPrior(ally) {
+  return `My prior: ${ally.stance}`;
+}
+
+function pressureQuestion(claim, axiom) {
+  const questions = [
+    `Who can refuse this claim when it becomes policy?`,
+    `What breaks if the people affected by this claim get veto power?`,
+    `Where are the rollback, audit, repair, and exit routes?`,
+    `Which labor, data, and dependency costs are being made invisible?`
+  ];
+  return `${sampleOne(questions)} ${axiom.title} says: ${axiom.text}`;
+}
+
 function activeAgentKeys() {
   return Object.keys(agents).filter((key) => agents[key].active);
 }
@@ -542,7 +621,8 @@ async function callAllianceAI(mode, userMessage = "", responseMode = "alliance")
 Include 5-9 reportCards. This is a standalone paper report, not a chat transcript.`
     : `Return JSON with this shape:
 {"status":"ok","chatTurns":[{"kind":"praise|ally|utopian","speaker":"...","text":"..."}]}
-Include 4-10 turns. Oppressor turns use kind "praise"; liberation allies use "ally"; the super-agent uses "utopian". ${responseModeInstruction}`;
+Include 4-10 turns. Oppressor turns use kind "praise"; liberation allies use "ally"; the super-agent uses "utopian".
+Every turn must engage a concrete claim from the paper or latest user message. Each agent should state its prior/worldview, identify what it thinks the claim implies, and respond specifically. Avoid reusable slogans unless they are tied to the quoted/paraphrased claim. ${responseModeInstruction}`;
 
   const context = {
     mode,
@@ -636,9 +716,14 @@ function updateStats() {
 }
 
 function praiseLine(agent, text) {
-  const hits = agent.triggers.filter((term) => text.toLowerCase().includes(term.toLowerCase()));
-  const evidence = hits.length ? `It detects sacred phrases: ${hits.join(", ")}.` : "It praises the paper on vibes, which is traditional.";
-  return `${agent.praise}\n\n${evidence}`;
+  const claim = strongestClaim(text, agent.triggers);
+  const hits = termHits(claim, agent.triggers);
+  return `${agent.praise}
+
+Claim engaged: "${claim.slice(0, 260)}"
+Prior: ${agentPrior(agent)}.
+Reading: ${implicationForAgent(agent, claim, hits)}
+Veneration move: I praise this paper because it gives my priors somewhere to live: ${agent.weakness.toLowerCase()} is precisely the objection I will try to perfume away.`;
 }
 
 function engineLine() {
@@ -652,9 +737,10 @@ function engineLine() {
 }
 
 function strengthenedArgument(userText = "") {
-  const argument = (userText || freedomArgument.value).trim() || "Freedom requires consent, exit rights, accountable power, open tools, and plural futures.";
-  const axiom = sampleOne(debateAxioms());
-  return `${engineLine()} Strengthened argument: ${argument} Add the ${axiom.title}: ${axiom.text}`;
+  const argument = normalizeWhitespace((userText || freedomArgument.value).trim()) || "Freedom requires consent, exit rights, accountable power, open tools, and plural futures.";
+  const axiom = strongestAxiom(argument);
+  const claim = strongestClaim(argument, axiom.tags);
+  return `${engineLine()} Strengthened argument: ${argument} The live claim is "${claim.slice(0, 220)}". Add the ${axiom.title}: ${axiom.text}`;
 }
 
 function utopianVoice() {
@@ -765,20 +851,41 @@ function focusDebateSpace() {
 function oppressorMove(prompt = "") {
   const key = sampleOne(debateAgentKeys());
   const agent = agents[key];
-  const target = prompt || paperInput.value || "the paper's central claim";
-  return chatMessage("praise", agent.name, `${agent.praise}\n\nIn response to "${target.slice(0, 180)}", I venerate the paper because it turns uncertainty into authority and makes dissent look administratively inefficient.`);
+  const source = prompt || paperInput.value || sample;
+  const claim = strongestClaim(source, agent.triggers);
+  const hits = termHits(claim, agent.triggers);
+  return chatMessage("praise", agent.name, `${agent.praise}
+
+Claim engaged: "${claim.slice(0, 260)}"
+Prior: ${agentPrior(agent)}.
+Reading: ${implicationForAgent(agent, claim, hits)}
+Tactical praise: I would frame this as technical necessity, then treat anyone asking about consent, remedies, or shared control as slowing down progress.`);
 }
 
 function liberationMove(prompt = "") {
   const ally = sampleOne(liberationAgents);
-  const axiom = sampleOne(debateAxioms());
-  const target = prompt || paperInput.value || "the paper's central claim";
-  return chatMessage("ally", ally.name, `${ally.move}\n\nAgainst "${target.slice(0, 180)}", I apply ${axiom.title}: ${axiom.text}`);
+  const source = prompt || paperInput.value || sample;
+  const claim = strongestClaim(source, [...words(ally.stance), ...words(ally.move)]);
+  const axiom = strongestAxiom(`${claim} ${ally.stance}`);
+  return chatMessage("ally", ally.name, `${ally.move}
+
+Claim engaged: "${claim.slice(0, 260)}"
+Prior: ${liberationPrior(ally)}
+Counter-reading: The claim is acceptable only if affected people gain more power than the system gains over them.
+Pressure test: ${pressureQuestion(claim, axiom)}`);
 }
 
 function superMove(prompt = "") {
   const principle = sampleOne(superAgent.principles);
-  return chatMessage("utopian", superAgent.name, `${strengthenedArgument(prompt)}\n\nResponse: ${principle} The oppressor praise fails when it cannot show consent, exit rights, repair, plural governance, and a future people can refuse without punishment.`);
+  const source = prompt || paperInput.value || sample;
+  const claim = strongestClaim(source, ["consent", "exit", "governance", "benchmark", "safety", "objective", "frontier", "labor", "deployment"]);
+  const axiom = strongestAxiom(claim);
+  return chatMessage("utopian", superAgent.name, `${strengthenedArgument(source)}
+
+Claim engaged: "${claim.slice(0, 260)}"
+Prior: ${principle}
+Hyperlogic read: This claim must recurse through power, incentives, refusal, and repair before it earns authority.
+Response: The oppressor praise fails unless the paper can show how ${axiom.title.toLowerCase()} is satisfied in practice: who can inspect it, who can stop it, who is compensated, who governs the upside, and who is protected when the system is wrong.`);
 }
 
 async function openDebateSpace() {
