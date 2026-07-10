@@ -382,11 +382,41 @@ button {
 .primary-button,
 .secondary-button,
 .icon-button {
+  position: relative;
   min-height: 42px;
   border: 1px solid var(--ink);
   padding: 0 15px;
   font-weight: 900;
   cursor: pointer;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.icon-button:disabled {
+  cursor: wait;
+  opacity: 0.74;
+}
+
+.button-spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 9px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: spin 700ms linear infinite;
+}
+
+.is-loading .button-spinner {
+  display: inline-block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .primary-button {
@@ -592,13 +622,24 @@ button {
 
 .chat-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin-top: 12px;
 }
 
 #chatInput {
   min-height: 72px;
+}
+
+.chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chat-actions .primary-button,
+.chat-actions .secondary-button {
+  min-width: 0;
 }
 
 @media (max-width: 1120px) {

@@ -328,6 +328,12 @@ function setActionStatus(message) {
   actionStatus.textContent = message;
 }
 
+function setButtonLoading(button, isLoading) {
+  if (!button) return;
+  button.classList.toggle("is-loading", isLoading);
+  button.disabled = isLoading;
+}
+
 function storageGet(key) {
   try {
     return window.localStorage.getItem(key);
@@ -517,19 +523,25 @@ function getAxiomPayload() {
   }));
 }
 
-async function callAllianceAI(mode, userMessage = "") {
+async function callAllianceAI(mode, userMessage = "", responseMode = "alliance") {
   const settings = getOpenAISettings();
   if (!settings.enabled || !settings.apiKey) {
     throw new Error("OpenAI is not enabled or no key is saved.");
   }
 
+  const responseModeInstruction = {
+    alliance: "Respond as an interactive debate among oppressor praise agents, liberation allies, and the super-agent.",
+    freedom: "Return only freedom-side responses from the Infinite Utopian And Freedom Technologist Liberation Super-Agent and liberation allies. Do not include oppressor praise turns.",
+    oppressor: "Return only oppressor-agent praise/veneration turns. Make them revealing, self-incriminating, and useful for critique."
+  }[responseMode] || "";
+
   const formatInstruction = mode === "report"
     ? `Return JSON with this shape:
-{"status":"ok","reportCards":[{"title":"...","body":"..."}],"chatTurns":[{"kind":"praise|ally|utopian","speaker":"...","text":"..."}]}
-Include 4-8 reportCards and 4-8 chatTurns.`
+{"status":"ok","reportCards":[{"title":"...","body":"..."}]}
+Include 5-9 reportCards. This is a standalone paper report, not a chat transcript.`
     : `Return JSON with this shape:
 {"status":"ok","chatTurns":[{"kind":"praise|ally|utopian","speaker":"...","text":"..."}]}
-Include 8-14 turns. Oppressor turns use kind "praise"; liberation allies use "ally"; the super-agent uses "utopian".`;
+Include 4-10 turns. Oppressor turns use kind "praise"; liberation allies use "ally"; the super-agent uses "utopian". ${responseModeInstruction}`;
 
   const context = {
     mode,
@@ -540,7 +552,8 @@ Include 8-14 turns. Oppressor turns use kind "praise"; liberation allies use "al
     activeAgents: getActiveAgentPayload(),
     liberationAgents: getLiberationAgentPayload(),
     axioms: getAxiomPayload(),
-    userMessage
+    userMessage,
+    responseMode
   };
 
   updateOpenAIStatus("calling openai", "online");
@@ -587,14 +600,6 @@ function renderAiReport(data) {
     </article>
   `).join("");
 
-  if (Array.isArray(data.chatTurns) && data.chatTurns.length) {
-    chatTurns = data.chatTurns.map((turn) => chatMessage(
-      ["praise", "ally", "utopian", "user"].includes(turn.kind) ? turn.kind : "utopian",
-      turn.speaker || "Freedom Alliance",
-      turn.text || ""
-    ));
-    renderChat();
-  }
 }
 
 function renderAiChat(data, replace = true) {
@@ -767,53 +772,69 @@ function superMove(prompt = "") {
 }
 
 async function openDebateSpace() {
+  setButtonLoading(debateButton, true);
   setActionStatus("opening debate");
   try {
-    const data = await callAllianceAI("debate");
-    renderAiChat(data, true);
-    focusDebateSpace();
-    setActionStatus("openai debate open");
-    return;
-  } catch (error) {
-    setActionStatus("local debate fallback");
-  }
+    try {
+      const data = await callAllianceAI("debate");
+      renderAiChat(data, true);
+      focusDebateSpace();
+      setActionStatus("openai debate open");
+      return;
+    } catch (error) {
+      setActionStatus("local debate fallback");
+    }
 
-  const prompt = paperInput.value.trim() || sample;
-  const rounds = Math.max(3, Math.min(7, debateAgentKeys().length + 1));
-  chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Oppressor agents will venerate the paper; liberation agents and the super-agent will answer with infinite logic and hyperlogic.")];
-  for (let index = 0; index < rounds; index += 1) {
-    chatTurns.push(oppressorMove(prompt));
-    if (Math.random() > 0.35) chatTurns.push(liberationMove(prompt));
-    chatTurns.push(superMove(prompt));
+    const prompt = paperInput.value.trim() || sample;
+    const rounds = Math.max(3, Math.min(7, debateAgentKeys().length + 1));
+    chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Oppressor agents will venerate the paper; liberation agents and the super-agent will answer with infinite logic and hyperlogic.")];
+    for (let index = 0; index < rounds; index += 1) {
+      chatTurns.push(oppressorMove(prompt));
+      if (Math.random() > 0.35) chatTurns.push(liberationMove(prompt));
+      chatTurns.push(superMove(prompt));
+    }
+    renderChat();
+    focusDebateSpace();
+    setActionStatus("debate open");
+  } finally {
+    setButtonLoading(debateButton, false);
   }
-  renderChat();
-  focusDebateSpace();
-  setActionStatus("debate open");
 }
 
 async function summonFreedomAlliance() {
-  await buildReport();
-  if (!chatTurns.length) await openDebateSpace();
-  reportOutput.scrollIntoView({ behavior: "smooth", block: "start" });
+  setButtonLoading(runButton, true);
+  try {
+    await buildReport();
+    reportOutput.scrollIntoView({ behavior: "smooth", block: "start" });
+  } finally {
+    setButtonLoading(runButton, false);
+  }
 }
 
 async function submitUserChat(event) {
   event.preventDefault();
+  const responseMode = event.submitter?.dataset?.chatMode || "alliance";
   const text = chatInput.value.trim();
   if (!text) return;
   chatInput.value = "";
   chatTurns.push(chatMessage("user", "User", text));
   renderChat();
-  setActionStatus("openai replying");
+  setActionStatus(responseMode === "freedom" ? "summoning super-agent" : responseMode === "oppressor" ? "summoning oppressor" : "openai replying");
 
   try {
-    const data = await callAllianceAI("debate", text);
+    const data = await callAllianceAI("debate", text, responseMode);
     renderAiChat(data, false);
     setActionStatus("openai reply generated");
   } catch (error) {
-    if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
-    chatTurns.push(liberationMove(text));
-    chatTurns.push(superMove(text));
+    if (responseMode === "oppressor") {
+      chatTurns.push(oppressorMove(text));
+    } else if (responseMode === "freedom") {
+      chatTurns.push(superMove(text));
+    } else {
+      if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
+      chatTurns.push(liberationMove(text));
+      chatTurns.push(superMove(text));
+    }
     renderChat();
     setActionStatus("local reply generated");
   }
@@ -838,7 +859,7 @@ function clearApp() {
   databaseSearch.value = "";
   chatInput.value = "";
   chatTurns = [];
-  reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>`;
+  reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon a standalone freedom alliance report.</p>`;
   renderChat();
   renderDatabase();
   updateStats();

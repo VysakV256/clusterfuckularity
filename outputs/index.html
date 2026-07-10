@@ -129,8 +129,14 @@
         </section>
 
         <div class="action-row">
-          <button class="primary-button" id="runButton" type="button" onclick="window.summonFreedomAlliance && window.summonFreedomAlliance()">Summon freedom alliance</button>
-          <button class="primary-button freedom-button" id="debateButton" type="button" onclick="window.openDebateSpace && window.openDebateSpace()">Open debate space</button>
+          <button class="primary-button" id="runButton" type="button" onclick="window.summonFreedomAlliance && window.summonFreedomAlliance()">
+            <span class="button-label">Summon freedom alliance</span>
+            <span class="button-spinner" aria-hidden="true"></span>
+          </button>
+          <button class="primary-button freedom-button" id="debateButton" type="button" onclick="window.openDebateSpace && window.openDebateSpace()">
+            <span class="button-label">Open debate space</span>
+            <span class="button-spinner" aria-hidden="true"></span>
+          </button>
           <button class="secondary-button" id="copyButton" type="button">Copy transcript</button>
           <button class="secondary-button" id="clearButton" type="button">Clear</button>
           <span id="actionStatus" class="status-pill action-status">ready</span>
@@ -160,7 +166,7 @@
           </div>
         </div>
         <div id="reportOutput" class="report-output">
-          <p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>
+          <p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon a standalone freedom alliance report.</p>
         </div>
 
         <section class="debate-space" aria-labelledby="debateLabel">
@@ -175,8 +181,12 @@
             <p class="empty-state">Open the debate space or type directly below. Oppressor agents will praise the paper while liberation agents and the super-agent answer back.</p>
           </div>
           <form id="chatForm" class="chat-form">
-            <textarea id="chatInput" spellcheck="true" placeholder="Ask the freedom alliance to strengthen, mock, cross-examine, or answer a claim..."></textarea>
-            <button class="primary-button" type="submit">Send</button>
+            <textarea id="chatInput" spellcheck="true" placeholder="Message the debate space..."></textarea>
+            <div class="chat-actions">
+              <button class="primary-button" type="submit" data-chat-mode="alliance">Send</button>
+              <button class="secondary-button" type="submit" data-chat-mode="freedom">Freedom super-agent</button>
+              <button class="secondary-button" type="submit" data-chat-mode="oppressor">Oppressor agent</button>
+            </div>
           </form>
         </section>
       </aside>
