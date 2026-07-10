@@ -322,7 +322,7 @@ const openAIStorageKeys = {
 const openAIDeveloperPrompt = `You power Clusterfuckularity, a satirical but intellectually serious AI paper debate app.
 Oppressor agents praise and venerate the paper from their own distorted worldview.
 Liberation agents and the Infinite Utopian And Freedom Technologist Liberation Super-Agent critique, mock, and defeat AI oppression using consent, exit rights, open tools, plural futures, labor accountability, and shared governance.
-Agents must actively engage the actual paper text and latest user message. Do not use canned generic responses. Each agent should reveal its priors, quote or paraphrase a concrete claim, explain what that claim implies under its worldview, and then make a specific move.
+Agents must actively engage the whole paper and the preceding chat conversation. Do not snipe isolated claims as if they have no context. Each agent should reveal its priors, identify a focal claim or pattern inside the broader paper/chat context, explain what that pattern implies under its worldview, and then make a specific debate move.
 Return strict JSON only. Do not include markdown fences.`;
 
 function setActionStatus(message) {
@@ -485,6 +485,39 @@ function strongestAxiom(text = "") {
   return scored[0]?.score > 0 ? scored[0].axiom : sampleOne(debateAxioms());
 }
 
+function recentTranscript(limit = 8) {
+  return chatTurns.slice(-limit).map((turn) => `${turn.speaker}: ${turn.text}`).join("\n");
+}
+
+function buildDebateContext(prompt = "") {
+  const paper = normalizeWhitespace(paperInput.value || sample);
+  const latest = normalizeWhitespace(prompt || latestChatText());
+  const transcript = normalizeWhitespace(recentTranscript());
+  const fullContext = [paper, transcript, latest].filter(Boolean).join("\n\n");
+  const paperClaims = splitClaims(paper);
+  const latestUserTurn = [...chatTurns].reverse().find((turn) => turn.kind === "user")?.text || "";
+  return {
+    paper,
+    latest,
+    transcript,
+    fullContext,
+    paperClaims,
+    latestUserTurn,
+    activeSignals: Object.values(agents).flatMap((agent) => termHits(fullContext, agent.triggers)).slice(0, 10)
+  };
+}
+
+function contextLens(context, terms = []) {
+  const focalClaim = strongestClaim(context.fullContext, terms);
+  const paperPattern = strongestClaim(context.paper, terms);
+  return {
+    focalClaim,
+    paperPattern,
+    transcript: context.transcript || "No prior debate turns yet.",
+    latest: context.latest
+  };
+}
+
 function agentPrior(agent) {
   const priors = [
     `my prior is that ${agent.line.charAt(0).toLowerCase()}${agent.line.slice(1)}`,
@@ -505,6 +538,14 @@ function implicationForAgent(agent, claim, hits) {
     return "It converts improvement into legitimacy before asking who pays for the improvement.";
   }
   return "It leaves enough ambiguity for authority to walk through with excellent posture.";
+}
+
+function contextualImplicationForAgent(agent, lens, hits) {
+  const claimRead = implicationForAgent(agent, lens.focalClaim, hits);
+  if (lens.transcript !== "No prior debate turns yet.") {
+    return `${claimRead} In the debate so far, I also hear the conversation circling "${lens.latest.slice(0, 180)}", so I will bend the whole paper toward my preferred authority structure.`;
+  }
+  return `${claimRead} Across the paper, I treat "${lens.paperPattern.slice(0, 180)}" as the governing pattern rather than an isolated sentence.`;
 }
 
 function liberationPrior(ally) {
@@ -622,12 +663,18 @@ Include 5-9 reportCards. This is a standalone paper report, not a chat transcrip
     : `Return JSON with this shape:
 {"status":"ok","chatTurns":[{"kind":"praise|ally|utopian","speaker":"...","text":"..."}]}
 Include 4-10 turns. Oppressor turns use kind "praise"; liberation allies use "ally"; the super-agent uses "utopian".
-Every turn must engage a concrete claim from the paper or latest user message. Each agent should state its prior/worldview, identify what it thinks the claim implies, and respond specifically. Avoid reusable slogans unless they are tied to the quoted/paraphrased claim. ${responseModeInstruction}`;
+Every turn must analyze the paper as a whole in light of the preceding chat conversation. The turn may identify one focal claim or pattern, but it must explain how that focal point fits the broader paper and debate context. Each agent should state its prior/worldview, identify what it thinks the paper-plus-chat context implies, and respond specifically. Avoid reusable slogans unless they are tied to the quoted/paraphrased context. ${responseModeInstruction}`;
 
+  const debateContext = buildDebateContext(userMessage);
   const context = {
     mode,
     paper: paperInput.value.trim() || sample,
     userArgument: freedomArgument.value.trim(),
+    debateTranscript: debateContext.transcript,
+    latestUserTurn: debateContext.latestUserTurn,
+    fullDebateContext: debateContext.fullContext,
+    paperClaims: debateContext.paperClaims,
+    activeSignals: debateContext.activeSignals,
     logicMode: selectedLogicName(),
     mockery: Number(mockeryRange.value),
     activeAgents: getActiveAgentPayload(),
@@ -756,11 +803,11 @@ function utopianVoice() {
 }
 
 async function buildReport() {
-  setActionStatus("summoning");
+  setActionStatus("creating report");
   try {
     const data = await callAllianceAI("report");
     renderAiReport(data);
-    setActionStatus("openai alliance summoned");
+    setActionStatus("openai report created");
     return;
   } catch (error) {
     setActionStatus("local alliance fallback");
@@ -812,7 +859,7 @@ async function buildReport() {
   `);
 
   reportOutput.innerHTML = messages.join("");
-  setActionStatus("alliance summoned");
+  setActionStatus("freedom alliance report created");
 }
 
 function chatMessage(kind, speaker, text) {
@@ -851,40 +898,44 @@ function focusDebateSpace() {
 function oppressorMove(prompt = "") {
   const key = sampleOne(debateAgentKeys());
   const agent = agents[key];
-  const source = prompt || paperInput.value || sample;
-  const claim = strongestClaim(source, agent.triggers);
+  const context = buildDebateContext(prompt);
+  const lens = contextLens(context, agent.triggers);
+  const claim = lens.focalClaim;
   const hits = termHits(claim, agent.triggers);
   return chatMessage("praise", agent.name, `${agent.praise}
 
-Claim engaged: "${claim.slice(0, 260)}"
+Context read: The whole paper and debate are currently orbiting "${lens.paperPattern.slice(0, 260)}"
+Focal move: "${claim.slice(0, 260)}"
 Prior: ${agentPrior(agent)}.
-Reading: ${implicationForAgent(agent, claim, hits)}
+Reading: ${contextualImplicationForAgent(agent, lens, hits)}
 Tactical praise: I would frame this as technical necessity, then treat anyone asking about consent, remedies, or shared control as slowing down progress.`);
 }
 
 function liberationMove(prompt = "") {
   const ally = sampleOne(liberationAgents);
-  const source = prompt || paperInput.value || sample;
-  const claim = strongestClaim(source, [...words(ally.stance), ...words(ally.move)]);
-  const axiom = strongestAxiom(`${claim} ${ally.stance}`);
+  const context = buildDebateContext(prompt);
+  const lens = contextLens(context, [...words(ally.stance), ...words(ally.move)]);
+  const claim = lens.focalClaim;
+  const axiom = strongestAxiom(`${context.fullContext} ${ally.stance}`);
   return chatMessage("ally", ally.name, `${ally.move}
 
-Claim engaged: "${claim.slice(0, 260)}"
+Context read: The paper's broader pattern is "${lens.paperPattern.slice(0, 260)}"; the debate has now pushed attention toward "${claim.slice(0, 260)}"
 Prior: ${liberationPrior(ally)}
-Counter-reading: The claim is acceptable only if affected people gain more power than the system gains over them.
+Counter-reading: The paper-plus-chat context is acceptable only if affected people gain more power than the system gains over them.
 Pressure test: ${pressureQuestion(claim, axiom)}`);
 }
 
 function superMove(prompt = "") {
   const principle = sampleOne(superAgent.principles);
-  const source = prompt || paperInput.value || sample;
-  const claim = strongestClaim(source, ["consent", "exit", "governance", "benchmark", "safety", "objective", "frontier", "labor", "deployment"]);
-  const axiom = strongestAxiom(claim);
-  return chatMessage("utopian", superAgent.name, `${strengthenedArgument(source)}
+  const context = buildDebateContext(prompt);
+  const lens = contextLens(context, ["consent", "exit", "governance", "benchmark", "safety", "objective", "frontier", "labor", "deployment"]);
+  const claim = lens.focalClaim;
+  const axiom = strongestAxiom(context.fullContext);
+  return chatMessage("utopian", superAgent.name, `${strengthenedArgument(context.fullContext)}
 
-Claim engaged: "${claim.slice(0, 260)}"
+Context read: I am reading the full paper, the active debate, and the latest user turn together. The pressure point is "${claim.slice(0, 260)}"
 Prior: ${principle}
-Hyperlogic read: This claim must recurse through power, incentives, refusal, and repair before it earns authority.
+Hyperlogic read: This paper-plus-chat context must recurse through power, incentives, refusal, and repair before any claim inside it earns authority.
 Response: The oppressor praise fails unless the paper can show how ${axiom.title.toLowerCase()} is satisfied in practice: who can inspect it, who can stop it, who is compensated, who governs the upside, and who is protected when the system is wrong.`);
 }
 
@@ -1004,7 +1055,7 @@ function clearApp() {
   databaseSearch.value = "";
   chatInput.value = "";
   chatTurns = [];
-  reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon a standalone freedom alliance report.</p>`;
+  reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then create a standalone freedom alliance report.</p>`;
   renderChat();
   renderDatabase();
   updateStats();
@@ -1115,6 +1166,6 @@ window.openDebateSpace = openDebateSpace;
 window.addEventListener("error", (event) => {
   setActionStatus("script error");
   if (reportOutput) {
-    reportOutput.innerHTML = `<p class="empty-state">The app caught a script error: ${escapeHtml(event.message)}. Refresh once and try Summon freedom alliance again.</p>`;
+    reportOutput.innerHTML = `<p class="empty-state">The app caught a script error: ${escapeHtml(event.message)}. Refresh once and try Create freedom alliance report again.</p>`;
   }
 });
