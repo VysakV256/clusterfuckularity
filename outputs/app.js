@@ -300,6 +300,7 @@ const reportOutput = document.querySelector("#reportOutput");
 const chatOutput = document.querySelector("#chatOutput");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
+const responseButtons = document.querySelectorAll("[data-response-mode]");
 const turnCount = document.querySelector("#turnCount");
 const actionStatus = document.querySelector("#actionStatus");
 const defeatScore = document.querySelector("#defeatScore");
@@ -752,6 +753,10 @@ function ensureChatStarted() {
   chatTurns.push(chatMessage("utopian", "Freedom Alliance", "Chat opened. Send a message, call the freedom super-agent, or invite an oppressor agent to expose its argument."));
 }
 
+function latestChatText() {
+  return chatTurns.at(-1)?.text || paperInput.value.trim() || sample;
+}
+
 function focusDebateSpace() {
   const debateSpace = document.querySelector(".debate-space");
   if (debateSpace) debateSpace.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -818,7 +823,6 @@ async function summonFreedomAlliance() {
 
 async function submitUserChat(event) {
   event.preventDefault();
-  const responseMode = event.submitter?.dataset?.chatMode || "alliance";
   const text = chatInput.value.trim();
   if (!text) return;
   chatInput.value = "";
@@ -826,24 +830,51 @@ async function submitUserChat(event) {
   chatTurns.push(chatMessage("user", "User", text));
   renderChat();
   focusDebateSpace();
-  setActionStatus(responseMode === "freedom" ? "summoning super-agent" : responseMode === "oppressor" ? "summoning oppressor" : "openai replying");
+  setActionStatus("openai replying");
 
   try {
-    const data = await callAllianceAI("debate", text, responseMode);
+    const data = await callAllianceAI("debate", text, "alliance");
     renderAiChat(data, false);
     setActionStatus("openai reply generated");
   } catch (error) {
-    if (responseMode === "oppressor") {
-      chatTurns.push(oppressorMove(text));
-    } else if (responseMode === "freedom") {
-      chatTurns.push(superMove(text));
-    } else {
-      if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
-      chatTurns.push(liberationMove(text));
-      chatTurns.push(superMove(text));
-    }
+    if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
+    chatTurns.push(liberationMove(text));
+    chatTurns.push(superMove(text));
     renderChat();
     setActionStatus("local reply generated");
+  }
+}
+
+async function initiateAgentResponse(event) {
+  const button = event.currentTarget;
+  const responseMode = button.dataset.responseMode || "freedom";
+  const pendingText = chatInput.value.trim();
+  ensureChatStarted();
+  if (pendingText) {
+    chatInput.value = "";
+    chatTurns.push(chatMessage("user", "User", pendingText));
+  }
+  const prompt = pendingText || latestChatText();
+  renderChat();
+  focusDebateSpace();
+  setButtonLoading(button, true);
+  setActionStatus(responseMode === "oppressor" ? "summoning oppressor response" : "summoning freedom alliance response");
+
+  try {
+    const data = await callAllianceAI("debate", prompt, responseMode);
+    renderAiChat(data, false);
+    setActionStatus(responseMode === "oppressor" ? "oppressor response generated" : "freedom alliance response generated");
+  } catch (error) {
+    if (responseMode === "oppressor") {
+      chatTurns.push(oppressorMove(prompt));
+    } else {
+      chatTurns.push(liberationMove(prompt));
+      chatTurns.push(superMove(prompt));
+    }
+    renderChat();
+    setActionStatus("local response generated");
+  } finally {
+    setButtonLoading(button, false);
   }
 }
 
@@ -959,6 +990,7 @@ forgetOpenAIButton.addEventListener("click", forgetOpenAISettings);
 useOpenAI.addEventListener("change", saveOpenAISettings);
 openaiModel.addEventListener("change", saveOpenAISettings);
 chatForm.addEventListener("submit", submitUserChat);
+responseButtons.forEach((button) => button.addEventListener("click", initiateAgentResponse));
 copyButton.addEventListener("click", copyTranscript);
 clearButton.addEventListener("click", clearApp);
 window.addEventListener("resize", resizeCanvas);
