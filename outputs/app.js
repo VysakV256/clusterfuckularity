@@ -327,11 +327,17 @@ function termCount(text, terms) {
 }
 
 function sampleOne(items) {
+  if (!items.length) return null;
   return items[Math.floor(Math.random() * items.length)];
 }
 
 function activeAgentKeys() {
   return Object.keys(agents).filter((key) => agents[key].active);
+}
+
+function debateAgentKeys() {
+  const active = activeAgentKeys();
+  return active.length ? active : Object.keys(agents).slice(0, 4);
 }
 
 function activeAxioms() {
@@ -341,6 +347,11 @@ function activeAxioms() {
     const haystack = `${axiom.title} ${axiom.tags.join(" ")} ${axiom.text}`.toLowerCase();
     return query.split(/\s+/).every((part) => haystack.includes(part));
   });
+}
+
+function debateAxioms() {
+  const matches = activeAxioms();
+  return matches.length ? matches : logicDatabase;
 }
 
 function renderAgents() {
@@ -405,7 +416,7 @@ function engineLine() {
 
 function strengthenedArgument(userText = "") {
   const argument = (userText || freedomArgument.value).trim() || "Freedom requires consent, exit rights, accountable power, open tools, and plural futures.";
-  const axiom = sampleOne(activeAxioms());
+  const axiom = sampleOne(debateAxioms());
   return `${engineLine()} Strengthened argument: ${argument} Add the ${axiom.title}: ${axiom.text}`;
 }
 
@@ -422,23 +433,16 @@ function utopianVoice() {
 }
 
 function buildReport() {
-  const text = paperInput.value.trim();
-  if (!text) {
-    reportOutput.innerHTML = `<p class="empty-state">Paste or load an AI paper first. The freedom alliance needs a doctrine to challenge.</p>`;
-    return;
-  }
+  const text = paperInput.value.trim() || sample;
 
-  const active = activeAgentKeys();
-  if (!active.length) {
-    reportOutput.innerHTML = `<p class="empty-state">Select at least one oppressor praise agent so the veneration chorus has a mouth.</p>`;
-    return;
-  }
+  const active = debateAgentKeys();
 
-  const selectedAxioms = activeAxioms().slice(0, 5);
+  const selectedAxioms = debateAxioms().slice(0, 5);
   const messages = [];
   messages.push(`
     <article class="report-card">
       <h3>Freedom Alliance Opening</h3>
+      ${paperInput.value.trim() ? "" : "<p><strong>No paper pasted:</strong> using the built-in sample claim so the alliance can still run.</p>"}
       <p>The paper arrives carrying ${worshipScore.textContent} paper-worship units and ${fogScore.textContent} abstraction-fog units. The logic database answers with ${logicScore.textContent} arsenal units.</p>
       <p>${escapeHtml(utopianVoice())}</p>
     </article>
@@ -497,7 +501,7 @@ function renderChat() {
 }
 
 function oppressorMove(prompt = "") {
-  const key = sampleOne(activeAgentKeys());
+  const key = sampleOne(debateAgentKeys());
   const agent = agents[key];
   const target = prompt || paperInput.value || "the paper's central claim";
   return chatMessage("praise", agent.name, `${agent.praise}\n\nIn response to "${target.slice(0, 180)}", I venerate the paper because it turns uncertainty into authority and makes dissent look administratively inefficient.`);
@@ -505,7 +509,7 @@ function oppressorMove(prompt = "") {
 
 function liberationMove(prompt = "") {
   const ally = sampleOne(liberationAgents);
-  const axiom = sampleOne(activeAxioms());
+  const axiom = sampleOne(debateAxioms());
   const target = prompt || paperInput.value || "the paper's central claim";
   return chatMessage("ally", ally.name, `${ally.move}\n\nAgainst "${target.slice(0, 180)}", I apply ${axiom.title}: ${axiom.text}`);
 }
@@ -516,19 +520,13 @@ function superMove(prompt = "") {
 }
 
 function openDebateSpace() {
-  if (!paperInput.value.trim()) {
-    chatTurns = [
-      chatMessage("utopian", superAgent.name, "Load or paste a paper first if you want paper-specific debate. The freedom alliance is awake; it just needs a claim to metabolize.")
-    ];
-    renderChat();
-    return;
-  }
-  const rounds = Math.max(3, Math.min(7, activeAgentKeys().length + 1));
+  const prompt = paperInput.value.trim() || sample;
+  const rounds = Math.max(3, Math.min(7, debateAgentKeys().length + 1));
   chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Oppressor agents will venerate the paper; liberation agents and the super-agent will answer with infinite logic and hyperlogic.")];
   for (let index = 0; index < rounds; index += 1) {
-    chatTurns.push(oppressorMove());
-    if (Math.random() > 0.35) chatTurns.push(liberationMove());
-    chatTurns.push(superMove());
+    chatTurns.push(oppressorMove(prompt));
+    if (Math.random() > 0.35) chatTurns.push(liberationMove(prompt));
+    chatTurns.push(superMove(prompt));
   }
   renderChat();
 }
