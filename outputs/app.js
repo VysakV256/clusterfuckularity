@@ -295,6 +295,7 @@ const chatOutput = document.querySelector("#chatOutput");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 const turnCount = document.querySelector("#turnCount");
+const actionStatus = document.querySelector("#actionStatus");
 const defeatScore = document.querySelector("#defeatScore");
 const worshipScore = document.querySelector("#worshipScore");
 const fogScore = document.querySelector("#fogScore");
@@ -304,6 +305,11 @@ const signalTags = document.querySelector("#signalTags");
 const agentCount = document.querySelector("#agentCount");
 
 let chatTurns = [];
+
+function setActionStatus(message) {
+  if (!actionStatus) return;
+  actionStatus.textContent = message;
+}
 
 function words(text) {
   return text.trim().match(/\b[\w-]+\b/g) || [];
@@ -433,6 +439,7 @@ function utopianVoice() {
 }
 
 function buildReport() {
+  setActionStatus("summoning");
   const text = paperInput.value.trim() || sample;
 
   const active = debateAgentKeys();
@@ -479,6 +486,7 @@ function buildReport() {
   `);
 
   reportOutput.innerHTML = messages.join("");
+  setActionStatus("alliance summoned");
 }
 
 function chatMessage(kind, speaker, text) {
@@ -498,6 +506,11 @@ function renderChat() {
     chatOutput.scrollTop = chatOutput.scrollHeight;
   }
   turnCount.textContent = `${chatTurns.length} turns`;
+}
+
+function focusDebateSpace() {
+  const debateSpace = document.querySelector(".debate-space");
+  if (debateSpace) debateSpace.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function oppressorMove(prompt = "") {
@@ -520,6 +533,7 @@ function superMove(prompt = "") {
 }
 
 function openDebateSpace() {
+  setActionStatus("opening debate");
   const prompt = paperInput.value.trim() || sample;
   const rounds = Math.max(3, Math.min(7, debateAgentKeys().length + 1));
   chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Oppressor agents will venerate the paper; liberation agents and the super-agent will answer with infinite logic and hyperlogic.")];
@@ -529,6 +543,14 @@ function openDebateSpace() {
     chatTurns.push(superMove(prompt));
   }
   renderChat();
+  focusDebateSpace();
+  setActionStatus("debate open");
+}
+
+function summonFreedomAlliance() {
+  buildReport();
+  if (!chatTurns.length) openDebateSpace();
+  reportOutput.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function submitUserChat(event) {
@@ -541,6 +563,7 @@ function submitUserChat(event) {
   chatTurns.push(liberationMove(text));
   chatTurns.push(superMove(text));
   renderChat();
+  setActionStatus("reply generated");
 }
 
 function copyTranscript() {
@@ -562,10 +585,11 @@ function clearApp() {
   databaseSearch.value = "";
   chatInput.value = "";
   chatTurns = [];
-  reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then run the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>`;
+  reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>`;
   renderChat();
   renderDatabase();
   updateStats();
+  setActionStatus("ready");
 }
 
 function resizeCanvas() {
@@ -649,8 +673,6 @@ paperInput.addEventListener("input", updateStats);
 logicMode.addEventListener("change", updateStats);
 mockeryRange.addEventListener("input", updateStats);
 databaseSearch.addEventListener("input", renderDatabase);
-runButton.addEventListener("click", buildReport);
-debateButton.addEventListener("click", openDebateSpace);
 chatForm.addEventListener("submit", submitUserChat);
 copyButton.addEventListener("click", copyTranscript);
 clearButton.addEventListener("click", clearApp);
@@ -661,3 +683,13 @@ renderDatabase();
 renderChat();
 resizeCanvas();
 requestAnimationFrame(drawCanvas);
+
+window.summonFreedomAlliance = summonFreedomAlliance;
+window.openDebateSpace = openDebateSpace;
+
+window.addEventListener("error", (event) => {
+  setActionStatus("script error");
+  if (reportOutput) {
+    reportOutput.innerHTML = `<p class="empty-state">The app caught a script error: ${escapeHtml(event.message)}. Refresh once and try Summon freedom alliance again.</p>`;
+  }
+});

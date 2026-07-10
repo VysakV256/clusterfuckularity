@@ -400,6 +400,14 @@ button {
   white-space: nowrap;
 }
 
+.action-status {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  border-color: var(--green);
+  color: var(--green);
+}
+
 .report-panel {
   position: sticky;
   top: 18px;

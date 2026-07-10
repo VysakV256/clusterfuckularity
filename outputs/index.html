@@ -102,10 +102,11 @@
         </section>
 
         <div class="action-row">
-          <button class="primary-button" id="runButton" type="button">Run freedom alliance</button>
-          <button class="primary-button freedom-button" id="debateButton" type="button">Open debate space</button>
+          <button class="primary-button" id="runButton" type="button" onclick="window.summonFreedomAlliance && window.summonFreedomAlliance()">Summon freedom alliance</button>
+          <button class="primary-button freedom-button" id="debateButton" type="button" onclick="window.openDebateSpace && window.openDebateSpace()">Open debate space</button>
           <button class="secondary-button" id="copyButton" type="button">Copy transcript</button>
           <button class="secondary-button" id="clearButton" type="button">Clear</button>
+          <span id="actionStatus" class="status-pill action-status">ready</span>
         </div>
       </section>
 
@@ -132,7 +133,7 @@
           </div>
         </div>
         <div id="reportOutput" class="report-output">
-          <p class="empty-state">Load or paste an AI paper, choose the praise agents, then run the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>
+          <p class="empty-state">Load or paste an AI paper, choose the praise agents, then summon the freedom alliance. The oppressor chorus will venerate the paper; the liberation super-agent will dismantle the ritual.</p>
         </div>
 
         <section class="debate-space" aria-labelledby="debateLabel">
