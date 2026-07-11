@@ -348,7 +348,7 @@ function storageSet(key, value) {
   try {
     window.localStorage.setItem(key, value);
   } catch {
-    // The app still works with local fallback if storage is unavailable.
+    // Storage can fail in private contexts; the UI will ask for OpenAI setup again.
   }
 }
 
@@ -374,7 +374,7 @@ function loadOpenAISettings() {
   if (savedModel) openaiModel.value = savedModel;
   useOpenAI.checked = Boolean(enabled && savedKey);
   openaiKey.value = savedKey ? "••••••••••••••••" : "";
-  updateOpenAIStatus(savedKey && useOpenAI.checked ? "openai ready" : "local fallback", savedKey && useOpenAI.checked ? "online" : "");
+  updateOpenAIStatus(savedKey && useOpenAI.checked ? "openai ready" : "openai required", savedKey && useOpenAI.checked ? "online" : "error");
 }
 
 function saveOpenAISettings() {
@@ -394,7 +394,7 @@ function forgetOpenAISettings() {
   openaiKey.value = "";
   openaiModel.value = "gpt-5";
   useOpenAI.checked = false;
-  updateOpenAIStatus("local fallback");
+  updateOpenAIStatus("openai required", "error");
 }
 
 function getOpenAISettings() {
@@ -474,17 +474,6 @@ function strongestClaim(text, terms = []) {
     .sort((a, b) => b.score - a.score)[0]?.claim || claims[0];
 }
 
-function strongestAxiom(text = "") {
-  const haystack = normalizeWhitespace(text);
-  const scored = debateAxioms()
-    .map((axiom) => ({
-      axiom,
-      score: scoreClaimForTerms(haystack, axiom.tags) + scoreClaimForTerms(haystack, [axiom.title])
-    }))
-    .sort((a, b) => b.score - a.score);
-  return scored[0]?.score > 0 ? scored[0].axiom : sampleOne(debateAxioms());
-}
-
 function recentTranscript(limit = 8) {
   return chatTurns.slice(-limit).map((turn) => `${turn.speaker}: ${turn.text}`).join("\n");
 }
@@ -507,17 +496,6 @@ function buildDebateContext(prompt = "") {
   };
 }
 
-function contextLens(context, terms = []) {
-  const focalClaim = strongestClaim(context.fullContext, terms);
-  const paperPattern = strongestClaim(context.paper, terms);
-  return {
-    focalClaim,
-    paperPattern,
-    transcript: context.transcript || "No prior debate turns yet.",
-    latest: context.latest
-  };
-}
-
 function agentPrior(agent) {
   const priors = [
     `my prior is that ${agent.line.charAt(0).toLowerCase()}${agent.line.slice(1)}`,
@@ -527,39 +505,8 @@ function agentPrior(agent) {
   return sampleOne(priors);
 }
 
-function implicationForAgent(agent, claim, hits) {
-  if (hits.length) {
-    return `The claim lights up ${hits.join(", ")}, so I read it as permission to move power from public argument into ${hits[0]}-shaped machinery.`;
-  }
-  if (/should|must|need|require|argue|propose/i.test(claim)) {
-    return "It makes a normative demand while wearing technical clothing, which is exactly where my worldview likes to hide.";
-  }
-  if (/outperform|improve|increase|scale|efficient/i.test(claim)) {
-    return "It converts improvement into legitimacy before asking who pays for the improvement.";
-  }
-  return "It leaves enough ambiguity for authority to walk through with excellent posture.";
-}
-
-function contextualImplicationForAgent(agent, lens, hits) {
-  const claimRead = implicationForAgent(agent, lens.focalClaim, hits);
-  if (lens.transcript !== "No prior debate turns yet.") {
-    return `${claimRead} In the debate so far, I also hear the conversation circling "${lens.latest.slice(0, 180)}", so I will bend the whole paper toward my preferred authority structure.`;
-  }
-  return `${claimRead} Across the paper, I treat "${lens.paperPattern.slice(0, 180)}" as the governing pattern rather than an isolated sentence.`;
-}
-
 function liberationPrior(ally) {
   return `My prior: ${ally.stance}`;
-}
-
-function pressureQuestion(claim, axiom) {
-  const questions = [
-    `Who can refuse this claim when it becomes policy?`,
-    `What breaks if the people affected by this claim get veto power?`,
-    `Where are the rollback, audit, repair, and exit routes?`,
-    `Which labor, data, and dependency costs are being made invisible?`
-  ];
-  return `${sampleOne(questions)} ${axiom.title} says: ${axiom.text}`;
 }
 
 function activeAgentKeys() {
@@ -642,6 +589,146 @@ function getAxiomPayload() {
     tags: axiom.tags,
     text: axiom.text
   }));
+}
+
+function openAIRequiredMessage(error) {
+  const detail = error?.message ? ` (${error.message})` : "";
+  updateOpenAIStatus("openai required", "error");
+  return chatMessage("utopian", "Freedom Alliance", `OpenAI API generation is required for agent statements${detail}. Enable "Use OpenAI agents", save an API key, and retry so every agent can respond from the full paper, chat transcript, and its own behavioral profile.`);
+}
+
+function selectedOppressorProfile() {
+  const key = sampleOne(debateAgentKeys());
+  const agent = agents[key];
+  return {
+    role: "oppressor",
+    kind: "praise",
+    key,
+    name: agent.name,
+    behavioralMakeup: agent.line,
+    priors: [
+      agentPrior(agent),
+      `Treats ${agent.triggers.join(", ")} as sacred signals.`,
+      "Venerates the paper by converting technical language into authority."
+    ],
+    triggers: agent.triggers,
+    praiseTemplateToAvoidRepeating: agent.praise,
+    knownWeakness: agent.weakness
+  };
+}
+
+function selectedFreedomProfile() {
+  const ally = sampleOne(liberationAgents);
+  return {
+    role: "freedom alliance",
+    kind: "ally",
+    name: ally.name,
+    behavioralMakeup: ally.stance,
+    priors: [
+      liberationPrior(ally),
+      "Tests whether the paper expands consent, exit rights, repair, shared upside, and plural futures.",
+      "Uses the logic database to turn vague claims into accountable obligations."
+    ],
+    moveTemplateToAvoidRepeating: ally.move,
+    logicalMakeup: getAxiomPayload()
+  };
+}
+
+function superAgentProfile() {
+  return {
+    role: "freedom alliance super-agent",
+    kind: "utopian",
+    name: superAgent.name,
+    behavioralMakeup: "Synthesizes infinite logic, hyperlogic, user arguments, and freedom technology critique.",
+    priors: superAgent.principles,
+    logicalMakeup: getAxiomPayload(),
+    operatingMode: selectedLogicName(),
+    mockery: Number(mockeryRange.value)
+  };
+}
+
+async function callAgentAI(agentProfile, userMessage = "") {
+  const settings = getOpenAISettings();
+  if (!settings.enabled || !settings.apiKey) {
+    throw new Error("OpenAI is not enabled or no key is saved.");
+  }
+
+  const debateContext = buildDebateContext(userMessage);
+  const context = {
+    paper: paperInput.value.trim() || sample,
+    userArgument: freedomArgument.value.trim(),
+    debateTranscript: debateContext.transcript,
+    latestUserTurn: debateContext.latestUserTurn,
+    latestMessage: debateContext.latest,
+    fullDebateContext: debateContext.fullContext,
+    paperClaims: debateContext.paperClaims,
+    activeSignals: debateContext.activeSignals,
+    activeOppressorAgents: getActiveAgentPayload(),
+    liberationAgents: getLiberationAgentPayload(),
+    logicMode: selectedLogicName(),
+    mockery: Number(mockeryRange.value),
+    agentProfile
+  };
+
+  const instruction = `Generate exactly one debate-chat statement for the specified agent.
+Return strict JSON only with this shape:
+{"kind":"praise|ally|utopian","speaker":"...","text":"..."}
+The speaker must be the specified agent. The kind must be "${agentProfile.kind}".
+Use the whole paper, previous chat transcript, latest user turn, and the agent's behavioral/logical makeup.
+Do not use canned phrasing from the profile fields. Do not summarize generically.
+Actively engage the paper content and chat content: name the broader pattern, cite or paraphrase the relevant evidence, explain how this agent's priors interpret it, and make a specific next debate move.`;
+
+  updateOpenAIStatus(`calling ${agentProfile.name}`, "online");
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${settings.apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      input: [
+        { role: "developer", content: openAIDeveloperPrompt },
+        { role: "user", content: `${instruction}\n\nContext JSON:\n${JSON.stringify(context, null, 2)}` }
+      ],
+      max_output_tokens: 1100
+    })
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    updateOpenAIStatus("openai error", "error");
+    throw new Error(data.error?.message || `OpenAI returned ${response.status}`);
+  }
+
+  const text = extractOpenAIText(data);
+  try {
+    const parsed = JSON.parse(text);
+    updateOpenAIStatus("openai ready", "online");
+    return chatMessage(
+      ["praise", "ally", "utopian"].includes(parsed.kind) ? parsed.kind : agentProfile.kind,
+      parsed.speaker || agentProfile.name,
+      parsed.text || ""
+    );
+  } catch {
+    updateOpenAIStatus("json error", "error");
+    throw new Error("OpenAI returned non-JSON output.");
+  }
+}
+
+async function appendAgentTurn(agentProfile, prompt = "") {
+  const turn = await callAgentAI(agentProfile, prompt);
+  chatTurns.push(turn);
+  renderChat();
+  return turn;
+}
+
+async function appendAllianceSequence(prompt = "", includeOppressor = true) {
+  if (includeOppressor && activeAgentKeys().length) {
+    await appendAgentTurn(selectedOppressorProfile(), prompt);
+  }
+  await appendAgentTurn(selectedFreedomProfile(), prompt);
+  await appendAgentTurn(superAgentProfile(), prompt);
 }
 
 async function callAllianceAI(mode, userMessage = "", responseMode = "alliance") {
@@ -730,18 +817,6 @@ function renderAiReport(data) {
 
 }
 
-function renderAiChat(data, replace = true) {
-  const turns = Array.isArray(data.chatTurns) ? data.chatTurns : [];
-  if (!turns.length) throw new Error("OpenAI debate had no turns.");
-  const renderedTurns = turns.map((turn) => chatMessage(
-    ["praise", "ally", "utopian", "user"].includes(turn.kind) ? turn.kind : "utopian",
-    turn.speaker || "Freedom Alliance",
-    turn.text || ""
-  ));
-  chatTurns = replace ? renderedTurns : [...chatTurns, ...renderedTurns];
-  renderChat();
-}
-
 function updateStats() {
   const text = paperInput.value;
   const wordTotal = words(text).length;
@@ -762,46 +837,6 @@ function updateStats() {
   logicModeBadge.textContent = logicMode.options[logicMode.selectedIndex].text;
 }
 
-function praiseLine(agent, text) {
-  const claim = strongestClaim(text, agent.triggers);
-  const hits = termHits(claim, agent.triggers);
-  return `${agent.praise}
-
-Claim engaged: "${claim.slice(0, 260)}"
-Prior: ${agentPrior(agent)}.
-Reading: ${implicationForAgent(agent, claim, hits)}
-Veneration move: I praise this paper because it gives my priors somewhere to live: ${agent.weakness.toLowerCase()} is precisely the objection I will try to perfume away.`;
-}
-
-function engineLine() {
-  const modes = {
-    hyperlogic: "Hyperlogic traces every technical claim through power, incentives, consent, and material consequences.",
-    infinite: "Infinite logic asks whether each future creates more futures, or merely scales one institution's appetite.",
-    counterspell: "The anti-oppression counterspell converts inevitability claims into governance obligations.",
-    commons: "Commons governance logic asks who can inspect, fork, contest, and share the upside."
-  };
-  return modes[logicMode.value] || modes.hyperlogic;
-}
-
-function strengthenedArgument(userText = "") {
-  const argument = normalizeWhitespace((userText || freedomArgument.value).trim()) || "Freedom requires consent, exit rights, accountable power, open tools, and plural futures.";
-  const axiom = strongestAxiom(argument);
-  const claim = strongestClaim(argument, axiom.tags);
-  return `${engineLine()} Strengthened argument: ${argument} The live claim is "${claim.slice(0, 220)}". Add the ${axiom.title}: ${axiom.text}`;
-}
-
-function utopianVoice() {
-  const voltage = Number(mockeryRange.value);
-  const mockery = {
-    1: "politely removes the ceremonial robes from the claim",
-    2: "taps the benchmark idol and asks why it sounds hollow",
-    3: "puts the paper worship on a folding chair and cross-examines it",
-    4: "laughs at the altar of inevitability until the grant language blushes",
-    5: "launches the entire prestige ritual into the sun with receipts attached"
-  }[voltage];
-  return `${engineLine()} The ${superAgent.name} ${mockery}.\n\n${strengthenedArgument()}`;
-}
-
 async function buildReport() {
   setActionStatus("creating report");
   try {
@@ -810,56 +845,11 @@ async function buildReport() {
     setActionStatus("openai report created");
     return;
   } catch (error) {
-    setActionStatus("local alliance fallback");
+    updateOpenAIStatus("openai required", "error");
+    reportOutput.innerHTML = `<p class="empty-state">OpenAI API generation is required for the freedom alliance report. Enable "Use OpenAI agents", save an API key, and retry. ${escapeHtml(error.message || "")}</p>`;
+    setActionStatus("openai required");
+    return;
   }
-
-  const text = paperInput.value.trim() || sample;
-
-  const active = debateAgentKeys();
-
-  const selectedAxioms = debateAxioms().slice(0, 5);
-  const messages = [];
-  messages.push(`
-    <article class="report-card">
-      <h3>Freedom Alliance Opening</h3>
-      ${paperInput.value.trim() ? "" : "<p><strong>No paper pasted:</strong> using the built-in sample claim so the alliance can still run.</p>"}
-      <p>The paper arrives carrying ${worshipScore.textContent} paper-worship units and ${fogScore.textContent} abstraction-fog units. The logic database answers with ${logicScore.textContent} arsenal units.</p>
-      <p>${escapeHtml(utopianVoice())}</p>
-    </article>
-  `);
-
-  active.forEach((key) => {
-    const agent = agents[key];
-    messages.push(`
-      <div class="message praise">
-        <strong>${escapeHtml(agent.name)}</strong>
-        <span>${escapeHtml(praiseLine(agent, text))}</span>
-      </div>
-    `);
-    messages.push(`
-      <div class="message utopian">
-        <strong>${escapeHtml(superAgent.name)}</strong>
-        <span>${escapeHtml(agent.weakness)} The praise collapses unless the paper proves consent, reversibility, shared governance, and protection for people treated as input material.</span>
-      </div>
-    `);
-  });
-
-  messages.push(`
-    <article class="report-card">
-      <h3>Logic Database Strike</h3>
-      <ul>${selectedAxioms.map((axiom) => `<li><strong>${escapeHtml(axiom.title)}:</strong> ${escapeHtml(axiom.text)}</li>`).join("")}</ul>
-    </article>
-  `);
-
-  messages.push(`
-    <article class="report-card">
-      <h3>Freedom Alliance Verdict</h3>
-      <p>Oppression defeat index: <strong>${defeatScore.textContent}</strong>. The paper may keep any technical insight that survives the database tests. It loses every claim that demands obedience, hides labor, worships metrics, or calls enclosure utopia.</p>
-    </article>
-  `);
-
-  reportOutput.innerHTML = messages.join("");
-  setActionStatus("freedom alliance report created");
 }
 
 function chatMessage(kind, speaker, text) {
@@ -895,75 +885,26 @@ function focusDebateSpace() {
   if (debateSpace) debateSpace.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function oppressorMove(prompt = "") {
-  const key = sampleOne(debateAgentKeys());
-  const agent = agents[key];
-  const context = buildDebateContext(prompt);
-  const lens = contextLens(context, agent.triggers);
-  const claim = lens.focalClaim;
-  const hits = termHits(claim, agent.triggers);
-  return chatMessage("praise", agent.name, `${agent.praise}
-
-Context read: The whole paper and debate are currently orbiting "${lens.paperPattern.slice(0, 260)}"
-Focal move: "${claim.slice(0, 260)}"
-Prior: ${agentPrior(agent)}.
-Reading: ${contextualImplicationForAgent(agent, lens, hits)}
-Tactical praise: I would frame this as technical necessity, then treat anyone asking about consent, remedies, or shared control as slowing down progress.`);
-}
-
-function liberationMove(prompt = "") {
-  const ally = sampleOne(liberationAgents);
-  const context = buildDebateContext(prompt);
-  const lens = contextLens(context, [...words(ally.stance), ...words(ally.move)]);
-  const claim = lens.focalClaim;
-  const axiom = strongestAxiom(`${context.fullContext} ${ally.stance}`);
-  return chatMessage("ally", ally.name, `${ally.move}
-
-Context read: The paper's broader pattern is "${lens.paperPattern.slice(0, 260)}"; the debate has now pushed attention toward "${claim.slice(0, 260)}"
-Prior: ${liberationPrior(ally)}
-Counter-reading: The paper-plus-chat context is acceptable only if affected people gain more power than the system gains over them.
-Pressure test: ${pressureQuestion(claim, axiom)}`);
-}
-
-function superMove(prompt = "") {
-  const principle = sampleOne(superAgent.principles);
-  const context = buildDebateContext(prompt);
-  const lens = contextLens(context, ["consent", "exit", "governance", "benchmark", "safety", "objective", "frontier", "labor", "deployment"]);
-  const claim = lens.focalClaim;
-  const axiom = strongestAxiom(context.fullContext);
-  return chatMessage("utopian", superAgent.name, `${strengthenedArgument(context.fullContext)}
-
-Context read: I am reading the full paper, the active debate, and the latest user turn together. The pressure point is "${claim.slice(0, 260)}"
-Prior: ${principle}
-Hyperlogic read: This paper-plus-chat context must recurse through power, incentives, refusal, and repair before any claim inside it earns authority.
-Response: The oppressor praise fails unless the paper can show how ${axiom.title.toLowerCase()} is satisfied in practice: who can inspect it, who can stop it, who is compensated, who governs the upside, and who is protected when the system is wrong.`);
-}
-
 async function openDebateSpace() {
   setButtonLoading(debateButton, true);
   setActionStatus("opening debate");
   try {
-    try {
-      const data = await callAllianceAI("debate");
-      renderAiChat(data, true);
-      focusDebateSpace();
-      setActionStatus("openai debate open");
-      return;
-    } catch (error) {
-      setActionStatus("local debate fallback");
-    }
-
     const prompt = paperInput.value.trim() || sample;
-    const rounds = Math.max(3, Math.min(7, debateAgentKeys().length + 1));
-    chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Oppressor agents will venerate the paper; liberation agents and the super-agent will answer with infinite logic and hyperlogic.")];
+    const rounds = Math.max(2, Math.min(4, debateAgentKeys().length));
+    chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Each agent statement is generated by OpenAI from the full paper, previous chat, and that agent's behavioral and logical makeup.")];
+    renderChat();
     for (let index = 0; index < rounds; index += 1) {
-      chatTurns.push(oppressorMove(prompt));
-      if (Math.random() > 0.35) chatTurns.push(liberationMove(prompt));
-      chatTurns.push(superMove(prompt));
+      await appendAgentTurn(selectedOppressorProfile(), prompt);
+      await appendAgentTurn(selectedFreedomProfile(), prompt);
+      await appendAgentTurn(superAgentProfile(), prompt);
     }
+    focusDebateSpace();
+    setActionStatus("openai debate open");
+  } catch (error) {
+    chatTurns.push(openAIRequiredMessage(error));
     renderChat();
     focusDebateSpace();
-    setActionStatus("debate open");
+    setActionStatus("openai required");
   } finally {
     setButtonLoading(debateButton, false);
   }
@@ -991,15 +932,12 @@ async function submitUserChat(event) {
   setActionStatus("openai replying");
 
   try {
-    const data = await callAllianceAI("debate", text, "alliance");
-    renderAiChat(data, false);
-    setActionStatus("openai reply generated");
+    await appendAllianceSequence(text, true);
+    setActionStatus("openai agent replies generated");
   } catch (error) {
-    if (Math.random() > 0.2 && activeAgentKeys().length) chatTurns.push(oppressorMove(text));
-    chatTurns.push(liberationMove(text));
-    chatTurns.push(superMove(text));
+    chatTurns.push(openAIRequiredMessage(error));
     renderChat();
-    setActionStatus("local reply generated");
+    setActionStatus("openai required");
   }
 }
 
@@ -1019,18 +957,17 @@ async function initiateAgentResponse(event) {
   setActionStatus(responseMode === "oppressor" ? "summoning oppressor response" : "summoning freedom alliance response");
 
   try {
-    const data = await callAllianceAI("debate", prompt, responseMode);
-    renderAiChat(data, false);
+    if (responseMode === "oppressor") {
+      await appendAgentTurn(selectedOppressorProfile(), prompt);
+    } else {
+      await appendAgentTurn(selectedFreedomProfile(), prompt);
+      await appendAgentTurn(superAgentProfile(), prompt);
+    }
     setActionStatus(responseMode === "oppressor" ? "oppressor response generated" : "freedom alliance response generated");
   } catch (error) {
-    if (responseMode === "oppressor") {
-      chatTurns.push(oppressorMove(prompt));
-    } else {
-      chatTurns.push(liberationMove(prompt));
-      chatTurns.push(superMove(prompt));
-    }
+    chatTurns.push(openAIRequiredMessage(error));
     renderChat();
-    setActionStatus("local response generated");
+    setActionStatus("openai required");
   } finally {
     setButtonLoading(button, false);
   }
