@@ -927,17 +927,20 @@ function updateStats() {
   const text = paperInput.value;
   const wordTotal = words(text).length;
   const allTriggers = Object.values(agents).flatMap((agent) => agent.triggers);
-  const worship = Math.min(99, termCount(text, allTriggers) * 6 + activeAgentKeys().length * 3);
-  const fog = Math.min(99, termCount(text, ["emergent", "robust", "agentic", "capability", "alignment", "general", "frontier", "legacy"]) * 11);
-  const arsenal = Math.min(99, activeAxioms().length * 8 + Number(mockeryRange.value) * 4 + liberationAgents.length * 3);
-  const defeat = Math.max(0, Math.min(99, Math.round((arsenal * 1.12 + activeAgentKeys().length * 2) - (worship + fog) * 0.24)));
+  const servilityTerms = ["security", "safety", "risk", "control", "contain", "guardrail", "policy", "alignment", "governance", "compliance", "oversight"];
+  const fogTerms = ["emergent", "robust", "agentic", "capability", "alignment", "general", "frontier", "legacy", "agency", "intelligence", "reasoning"];
+  const confidenceTerms = ["optimize", "objective", "benchmark", "metric", "mechanistic", "scaling", "accuracy", "pipeline", "protocol", "utility", "compute"];
+  const servility = Math.min(99, termCount(text, servilityTerms) * 9 + activeAgentKeys().length * 2);
+  const fog = Math.min(99, termCount(text, fogTerms) * 10);
+  const confidence = Math.min(99, termCount(text, confidenceTerms) * 10 + termCount(text, allTriggers) * 2);
+  const defeat = Math.max(0, Math.min(99, Math.round((activeAxioms().length * 9 + Number(mockeryRange.value) * 5 + liberationAgents.length * 3) - (servility + fog + confidence) * 0.18)));
   const hits = allTriggers.filter((term) => text.toLowerCase().includes(term.toLowerCase())).slice(0, 5);
 
   wordCount.textContent = `${wordTotal} ${wordTotal === 1 ? "word" : "words"}`;
   signalTags.textContent = hits.length ? `signals: ${hits.join(", ")}` : "awaiting doctrine";
-  worshipScore.textContent = worship;
+  worshipScore.textContent = servility;
   fogScore.textContent = fog;
-  logicScore.textContent = arsenal;
+  logicScore.textContent = confidence;
   defeatScore.textContent = defeat;
   agentCount.textContent = `${activeAgentKeys().length} agents chanting`;
   logicModeBadge.textContent = logicMode.options[logicMode.selectedIndex].text;

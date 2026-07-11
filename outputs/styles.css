@@ -516,7 +516,8 @@ button {
 }
 
 .score-strip span,
-.score-strip small {
+.score-strip small,
+.score-strip p {
   display: block;
 }
 
@@ -529,6 +530,13 @@ button {
   color: var(--muted);
   font-size: 0.72rem;
   line-height: 1.2;
+}
+
+.score-strip p {
+  margin: 0.45rem 0 0;
+  color: var(--ink);
+  font-size: 0.66rem;
+  line-height: 1.25;
 }
 
 .report-output {
