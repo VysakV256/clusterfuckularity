@@ -97,6 +97,14 @@ h1 {
   line-height: 0.92;
 }
 
+.title-subtitle {
+  max-width: 850px;
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  font-weight: 800;
+}
+
 h2 {
   font-size: 1rem;
 }
