@@ -1119,21 +1119,35 @@ function drawCanvas(time = 0) {
   const ctx = logicCanvas.getContext("2d");
   const width = logicCanvas.width;
   const height = logicCanvas.height;
+  const ratio = window.devicePixelRatio || 1;
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#121312";
   ctx.fillRect(0, 0, width, height);
 
-  const axioms = activeAxioms();
+  const liberationLogics = activeAxioms();
+  const oppressorLogics = debateAgentKeys().map((key) => agents[key]);
   const cx = width * 0.5;
   const cy = height * 0.5;
-  const radius = Math.min(width, height) * 0.34;
+  const liberationRadius = Math.min(width, height) * 0.25;
+  const oppressorRadius = Math.min(width, height) * 0.39;
 
-  ctx.strokeStyle = "rgba(245, 242, 234, 0.18)";
+  ctx.strokeStyle = "rgba(11, 114, 86, 0.36)";
   ctx.lineWidth = 1;
-  axioms.forEach((_, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(axioms.length, 1) + time * 0.00015;
-    const x = cx + Math.cos(angle) * radius;
-    const y = cy + Math.sin(angle) * radius;
+  liberationLogics.forEach((_, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(liberationLogics.length, 1) + time * 0.00016;
+    const x = cx + Math.cos(angle) * liberationRadius;
+    const y = cy + Math.sin(angle) * liberationRadius;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  });
+
+  ctx.strokeStyle = "rgba(245, 242, 234, 0.3)";
+  oppressorLogics.forEach((_, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(oppressorLogics.length, 1) - time * 0.0001;
+    const x = cx + Math.cos(angle) * oppressorRadius;
+    const y = cy + Math.sin(angle) * oppressorRadius;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
     ctx.lineTo(x, y);
@@ -1142,21 +1156,46 @@ function drawCanvas(time = 0) {
 
   ctx.fillStyle = "#0b7256";
   ctx.beginPath();
-  ctx.arc(cx, cy, 18 * (window.devicePixelRatio || 1), 0, Math.PI * 2);
+  ctx.arc(cx, cy, 18 * ratio, 0, Math.PI * 2);
   ctx.fill();
 
-  axioms.forEach((axiom, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(axioms.length, 1) + time * 0.00015;
+  ctx.fillStyle = "rgba(245, 242, 234, 0.9)";
+  ctx.font = `${11 * ratio}px system-ui`;
+  ctx.fillText("liberation logics", cx + 24 * ratio, cy - 8 * ratio);
+  ctx.fillText("oppressor logics", cx + 24 * ratio, cy + 10 * ratio);
+
+  liberationLogics.forEach((axiom, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(liberationLogics.length, 1) + time * 0.00016;
     const pulse = 4 * Math.sin(time * 0.003 + index);
-    const x = cx + Math.cos(angle) * (radius + pulse);
-    const y = cy + Math.sin(angle) * (radius + pulse);
-    ctx.fillStyle = index % 2 ? "#d8a525" : "#f5f2ea";
+    const x = cx + Math.cos(angle) * (liberationRadius + pulse);
+    const y = cy + Math.sin(angle) * (liberationRadius + pulse);
+    ctx.fillStyle = "#20a06f";
+    ctx.strokeStyle = "rgba(209, 255, 229, 0.72)";
+    ctx.lineWidth = 1.5 * ratio;
     ctx.beginPath();
-    ctx.arc(x, y, 7 * (window.devicePixelRatio || 1), 0, Math.PI * 2);
+    ctx.arc(x, y, 7 * ratio, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(245, 242, 234, 0.86)";
-    ctx.font = `${12 * (window.devicePixelRatio || 1)}px system-ui`;
-    ctx.fillText(axiom.title, x + 12, y + 4);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(209, 255, 229, 0.92)";
+    ctx.font = `${12 * ratio}px system-ui`;
+    ctx.fillText(axiom.title, x + 12 * ratio, y + 4 * ratio);
+  });
+
+  oppressorLogics.forEach((agent, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(oppressorLogics.length, 1) - time * 0.0001;
+    const pulse = 5 * Math.cos(time * 0.0024 + index);
+    const x = cx + Math.cos(angle) * (oppressorRadius + pulse);
+    const y = cy + Math.sin(angle) * (oppressorRadius + pulse);
+    ctx.fillStyle = "#050505";
+    ctx.strokeStyle = "rgba(245, 242, 234, 0.82)";
+    ctx.lineWidth = 1.5 * ratio;
+    ctx.beginPath();
+    ctx.arc(x, y, 8 * ratio, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(245, 242, 234, 0.84)";
+    ctx.font = `${12 * ratio}px system-ui`;
+    ctx.fillText(agent.name, x + 13 * ratio, y + 4 * ratio);
   });
 
   requestAnimationFrame(drawCanvas);
