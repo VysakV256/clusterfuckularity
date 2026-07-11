@@ -42,9 +42,15 @@
               <p class="eyebrow">database visual</p>
               <h2 id="mapLabel">Infinite Logic / Hyperlogic Map</h2>
             </div>
-            <span id="logicModeBadge" class="status-pill">hyperlogic</span>
+            <div class="panel-actions">
+              <span id="logicModeBadge" class="status-pill">hyperlogic</span>
+              <button class="secondary-button" id="redrawMapButton" type="button">Redraw map</button>
+            </div>
           </div>
-          <canvas id="logicCanvas" width="960" height="320" aria-label="animated logic database map"></canvas>
+          <div class="map-frame">
+            <canvas id="logicCanvas" width="960" height="320" aria-label="animated logic database map"></canvas>
+            <div id="mapTooltip" class="map-tooltip" role="status"></div>
+          </div>
         </section>
 
         <section class="controls">
@@ -173,11 +179,33 @@
           <p class="empty-state">Load or paste an AI paper, choose the praise agents, then create a standalone freedom alliance report.</p>
         </div>
 
+        <section class="verdict-panel" aria-labelledby="verdictLabel">
+          <div class="chat-head">
+            <div>
+              <p class="eyebrow">paper verdict</p>
+              <h2 id="verdictLabel">Declare The Paper</h2>
+            </div>
+            <span id="verdictStatus" class="status-pill">undeclared</span>
+          </div>
+          <div class="verdict-actions">
+            <button class="secondary-button" id="yeaButton" type="button">Yea</button>
+            <button class="secondary-button" id="nayButton" type="button">Nay</button>
+            <button class="secondary-button" id="saveDebateButton" type="button">Save paper debate</button>
+          </div>
+          <div class="saved-debates">
+            <label for="savedDebates">Saved paper debates</label>
+            <select id="savedDebates">
+              <option value="">No saved debates yet</option>
+            </select>
+            <button class="secondary-button" id="loadDebateButton" type="button">Load saved</button>
+          </div>
+        </section>
+
         <section class="debate-space" aria-labelledby="debateLabel">
           <div class="chat-head">
             <div>
               <p class="eyebrow">debate space</p>
-              <h2 id="debateLabel">Oppressor/Liberation Stochastic Debate</h2>
+              <h2 id="debateLabel">Oppressor/Liberation Directed Debate</h2>
             </div>
             <span id="turnCount" class="status-pill">0 turns</span>
           </div>

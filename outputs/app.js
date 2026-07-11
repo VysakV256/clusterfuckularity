@@ -277,6 +277,8 @@ const sample = `We present a state-of-the-art agentic alignment framework for sc
 const paperInput = document.querySelector("#paperInput");
 const sampleButton = document.querySelector("#sampleButton");
 const logicCanvas = document.querySelector("#logicCanvas");
+const mapTooltip = document.querySelector("#mapTooltip");
+const redrawMapButton = document.querySelector("#redrawMapButton");
 const logicMode = document.querySelector("#logicMode");
 const logicModeBadge = document.querySelector("#logicModeBadge");
 const mockeryRange = document.querySelector("#mockeryRange");
@@ -301,6 +303,12 @@ const chatOutput = document.querySelector("#chatOutput");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 const responseButtons = document.querySelectorAll("[data-response-mode]");
+const yeaButton = document.querySelector("#yeaButton");
+const nayButton = document.querySelector("#nayButton");
+const verdictStatus = document.querySelector("#verdictStatus");
+const saveDebateButton = document.querySelector("#saveDebateButton");
+const savedDebates = document.querySelector("#savedDebates");
+const loadDebateButton = document.querySelector("#loadDebateButton");
 const turnCount = document.querySelector("#turnCount");
 const actionStatus = document.querySelector("#actionStatus");
 const defeatScore = document.querySelector("#defeatScore");
@@ -312,11 +320,16 @@ const signalTags = document.querySelector("#signalTags");
 const agentCount = document.querySelector("#agentCount");
 
 let chatTurns = [];
+let currentVerdict = "";
+let mapRevision = 0;
+let mapClashes = [];
+let mapClashHitboxes = [];
 
 const openAIStorageKeys = {
   apiKey: "clusterfuckularity.openai.apiKey",
   model: "clusterfuckularity.openai.model",
-  enabled: "clusterfuckularity.openai.enabled"
+  enabled: "clusterfuckularity.openai.enabled",
+  savedDebates: "clusterfuckularity.savedDebates"
 };
 
 const openAIDeveloperPrompt = `You power Clusterfuckularity, a satirical but intellectually serious AI paper debate app.
@@ -534,6 +547,11 @@ function sampleOne(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
 
+function scoreTextForTerms(text = "", terms = []) {
+  const lower = text.toLowerCase();
+  return terms.reduce((score, term) => score + (lower.includes(term.toLowerCase()) ? 1 : 0), 0);
+}
+
 function normalizeWhitespace(text = "") {
   return String(text).replace(/\s+/g, " ").trim();
 }
@@ -688,8 +706,11 @@ function openAIRequiredMessage(error) {
   return chatMessage("utopian", "Freedom Alliance", `OpenAI API generation is required for agent statements${detail}. Enable "Use OpenAI agents", save an API key, and retry so every agent can respond from the full paper, chat transcript, and its own behavioral profile.`);
 }
 
-function selectedOppressorProfile() {
-  const key = sampleOne(debateAgentKeys());
+function selectedOppressorProfile(prompt = "") {
+  const context = buildDebateContext(prompt).fullContext;
+  const key = debateAgentKeys()
+    .map((agentKey) => ({ key: agentKey, score: scoreTextForTerms(context, agents[agentKey].triggers) }))
+    .sort((a, b) => b.score - a.score)[0]?.key || sampleOne(debateAgentKeys());
   const agent = agents[key];
   return {
     role: "oppressor",
@@ -708,8 +729,11 @@ function selectedOppressorProfile() {
   };
 }
 
-function selectedFreedomProfile() {
-  const ally = sampleOne(liberationAgents);
+function selectedFreedomProfile(prompt = "") {
+  const context = buildDebateContext(prompt).fullContext;
+  const ally = liberationAgents
+    .map((agent) => ({ agent, score: scoreTextForTerms(context, words(`${agent.stance} ${agent.move}`)) }))
+    .sort((a, b) => b.score - a.score)[0]?.agent || sampleOne(liberationAgents);
   return {
     role: "freedom alliance",
     kind: "ally",
@@ -725,7 +749,7 @@ function selectedFreedomProfile() {
   };
 }
 
-function superAgentProfile() {
+function superAgentProfile(finalWord = false) {
   return {
     role: "freedom alliance super-agent",
     kind: "utopian",
@@ -734,7 +758,9 @@ function superAgentProfile() {
     priors: superAgent.principles,
     logicalMakeup: getAxiomPayload(),
     operatingMode: selectedLogicName(),
-    mockery: Number(mockeryRange.value)
+    mockery: Number(mockeryRange.value),
+    finalWord,
+    concludingDuty: finalWord ? "This is the final word. Summarize the debate, declare the liberation stakes, and leave the user a continuing missive of enlightenment and liberation." : ""
   };
 }
 
@@ -767,7 +793,8 @@ Return strict JSON only with this shape:
 The speaker must be the specified agent. The kind must be "${agentProfile.kind}".
 Use the whole paper, previous chat transcript, latest user turn, and the agent's behavioral/logical makeup.
 Do not use canned phrasing from the profile fields. Do not summarize generically.
-Actively engage the paper content and chat content: name the broader pattern, cite or paraphrase the relevant evidence, explain how this agent's priors interpret it, and make a specific next debate move.`;
+Actively engage the paper content and chat content: name the broader pattern, cite or paraphrase the relevant evidence, explain how this agent's priors interpret it, and directly respond to the most relevant preceding agent or user claim.
+If agentProfile.finalWord is true, the response must be the freedom side's final word: summarize the clash, reach a liberation-oriented conclusion, and leave the user a continuing missive of enlightenment and liberation.`;
 
   updateOpenAIStatus(`calling ${agentProfile.name}`, "online");
   const response = await fetch("https://api.openai.com/v1/responses", {
@@ -817,10 +844,11 @@ async function appendAgentTurn(agentProfile, prompt = "") {
 
 async function appendAllianceSequence(prompt = "", includeOppressor = true) {
   if (includeOppressor && activeAgentKeys().length) {
-    await appendAgentTurn(selectedOppressorProfile(), prompt);
+    await appendAgentTurn(selectedOppressorProfile(prompt), prompt);
   }
-  await appendAgentTurn(selectedFreedomProfile(), prompt);
-  await appendAgentTurn(superAgentProfile(), prompt);
+  const counterPrompt = latestChatText();
+  await appendAgentTurn(selectedFreedomProfile(counterPrompt), counterPrompt);
+  await appendAgentTurn(superAgentProfile(true), latestChatText());
 }
 
 async function callAllianceAI(mode, userMessage = "", responseMode = "alliance") {
@@ -1003,10 +1031,11 @@ async function openDebateSpace() {
     chatTurns = [chatMessage("utopian", "Freedom Alliance", "Debate space opened. Each agent statement is generated by OpenAI from the full paper, previous chat, and that agent's behavioral and logical makeup.")];
     renderChat();
     for (let index = 0; index < rounds; index += 1) {
-      await appendAgentTurn(selectedOppressorProfile(), prompt);
-      await appendAgentTurn(selectedFreedomProfile(), prompt);
-      await appendAgentTurn(superAgentProfile(), prompt);
+      await appendAgentTurn(selectedOppressorProfile(latestChatText()), latestChatText());
+      await appendAgentTurn(selectedFreedomProfile(latestChatText()), latestChatText());
     }
+    await appendAgentTurn(superAgentProfile(true), latestChatText());
+    redrawHyperlogicMap("debate map redrawn");
     focusDebateSpace();
     setActionStatus("openai debate open");
   } catch (error) {
@@ -1042,6 +1071,7 @@ async function submitUserChat(event) {
 
   try {
     await appendAllianceSequence(text, true);
+    redrawHyperlogicMap();
     setActionStatus("openai agent replies generated");
   } catch (error) {
     chatTurns.push(openAIRequiredMessage(error));
@@ -1067,11 +1097,12 @@ async function initiateAgentResponse(event) {
 
   try {
     if (responseMode === "oppressor") {
-      await appendAgentTurn(selectedOppressorProfile(), prompt);
+      await appendAgentTurn(selectedOppressorProfile(prompt), prompt);
     } else {
-      await appendAgentTurn(selectedFreedomProfile(), prompt);
-      await appendAgentTurn(superAgentProfile(), prompt);
+      await appendAgentTurn(selectedFreedomProfile(prompt), prompt);
+      await appendAgentTurn(superAgentProfile(true), latestChatText());
     }
+    redrawHyperlogicMap();
     setActionStatus(responseMode === "oppressor" ? "oppressor response generated" : "freedom alliance response generated");
   } catch (error) {
     chatTurns.push(openAIRequiredMessage(error));
@@ -1095,12 +1126,74 @@ function copyTranscript() {
   });
 }
 
+function savedDebateRecords() {
+  try {
+    return JSON.parse(storageGet(openAIStorageKeys.savedDebates) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function storeSavedDebates(records) {
+  storageSet(openAIStorageKeys.savedDebates, JSON.stringify(records.slice(0, 25)));
+}
+
+function renderSavedDebates() {
+  const records = savedDebateRecords();
+  savedDebates.innerHTML = records.length
+    ? `<option value="">Choose saved debate</option>${records.map((record) => `<option value="${escapeHtml(record.id)}">${escapeHtml(record.title)}</option>`).join("")}`
+    : `<option value="">No saved debates yet</option>`;
+}
+
+function setVerdict(verdict) {
+  currentVerdict = verdict;
+  verdictStatus.textContent = verdict ? `verdict: ${verdict}` : "undeclared";
+  setActionStatus(verdict ? `paper marked ${verdict}` : "verdict cleared");
+}
+
+function saveCurrentDebate() {
+  const paper = paperInput.value.trim() || sample;
+  const title = `${currentVerdict ? currentVerdict.toUpperCase() : "UNDECLARED"} | ${words(paper).slice(0, 8).join(" ") || "saved paper debate"}`;
+  const records = savedDebateRecords();
+  records.unshift({
+    id: `debate-${Date.now()}`,
+    title,
+    savedAt: new Date().toISOString(),
+    verdict: currentVerdict,
+    paper,
+    freedomArgument: freedomArgument.value,
+    databaseSearch: databaseSearch.value,
+    chatTurns,
+    reportHtml: reportOutput.innerHTML
+  });
+  storeSavedDebates(records);
+  renderSavedDebates();
+  savedDebates.value = records[0].id;
+  setActionStatus("paper debate saved");
+}
+
+function loadSavedDebate() {
+  const record = savedDebateRecords().find((item) => item.id === savedDebates.value);
+  if (!record) return;
+  paperInput.value = record.paper || "";
+  freedomArgument.value = record.freedomArgument || "";
+  databaseSearch.value = record.databaseSearch || "";
+  chatTurns = Array.isArray(record.chatTurns) ? record.chatTurns : [];
+  reportOutput.innerHTML = record.reportHtml || `<p class="empty-state">Saved debate loaded.</p>`;
+  setVerdict(record.verdict || "");
+  renderChat();
+  renderDatabase();
+  updateStats();
+  redrawHyperlogicMap("saved debate loaded");
+}
+
 function clearApp() {
   paperInput.value = "";
   freedomArgument.value = "";
   databaseSearch.value = "";
   chatInput.value = "";
   chatTurns = [];
+  setVerdict("");
   reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then create a standalone freedom alliance report.</p>`;
   renderChat();
   renderDatabase();
@@ -1113,6 +1206,51 @@ function resizeCanvas() {
   const ratio = window.devicePixelRatio || 1;
   logicCanvas.width = Math.max(320, Math.floor(rect.width * ratio));
   logicCanvas.height = Math.max(160, Math.floor(rect.height * ratio));
+}
+
+function clashLabel(agent, axiom) {
+  const trigger = agent.triggers.find((term) => axiom.tags.includes(term)) || agent.triggers[0] || "control";
+  return `${trigger} vs ${axiom.tags[0] || "freedom"}`;
+}
+
+function clashText(agent, axiom) {
+  return `${agent.name} tries to turn ${agent.triggers.slice(0, 3).join(", ")} into authority. ${axiom.title} counters: ${axiom.text}`;
+}
+
+function createMapClashes() {
+  const axioms = activeAxioms();
+  const agentList = debateAgentKeys().map((key) => agents[key]);
+  const context = buildDebateContext(latestChatText()).fullContext;
+  const sortedAgents = agentList
+    .map((agent) => ({ agent, score: scoreTextForTerms(context, agent.triggers) }))
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.agent);
+  mapClashes = sortedAgents.slice(0, Math.min(6, sortedAgents.length, axioms.length)).map((agent, index) => {
+    const axiom = axioms[(index + mapRevision) % axioms.length];
+    return {
+      agent,
+      axiom,
+      label: clashLabel(agent, axiom),
+      text: clashText(agent, axiom),
+      agentIndex: agentList.indexOf(agent),
+      axiomIndex: axioms.indexOf(axiom)
+    };
+  });
+}
+
+function redrawHyperlogicMap(message = "map redrawn") {
+  mapRevision += 1;
+  createMapClashes();
+  if (mapTooltip) mapTooltip.style.display = "none";
+  setActionStatus(message);
+}
+
+function distanceToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (!dx && !dy) return Math.hypot(px - x1, py - y1);
+  const t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
 }
 
 function drawCanvas(time = 0) {
@@ -1130,28 +1268,67 @@ function drawCanvas(time = 0) {
   const cy = height * 0.5;
   const liberationRadius = Math.min(width, height) * 0.25;
   const oppressorRadius = Math.min(width, height) * 0.39;
+  const rotation = mapRevision * 0.38;
+  mapClashHitboxes = [];
+  if (!mapClashes.length) createMapClashes();
+  const liberationNodes = liberationLogics.map((axiom, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(liberationLogics.length, 1) + time * 0.00016 + rotation;
+    const pulse = 4 * Math.sin(time * 0.003 + index);
+    return {
+      axiom,
+      x: cx + Math.cos(angle) * (liberationRadius + pulse),
+      y: cy + Math.sin(angle) * (liberationRadius + pulse)
+    };
+  });
+  const oppressorNodes = oppressorLogics.map((agent, index) => {
+    const angle = (Math.PI * 2 * index) / Math.max(oppressorLogics.length, 1) - time * 0.0001 - rotation;
+    const pulse = 5 * Math.cos(time * 0.0024 + index);
+    return {
+      agent,
+      x: cx + Math.cos(angle) * (oppressorRadius + pulse),
+      y: cy + Math.sin(angle) * (oppressorRadius + pulse)
+    };
+  });
 
   ctx.strokeStyle = "rgba(11, 114, 86, 0.36)";
   ctx.lineWidth = 1;
-  liberationLogics.forEach((_, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(liberationLogics.length, 1) + time * 0.00016;
-    const x = cx + Math.cos(angle) * liberationRadius;
-    const y = cy + Math.sin(angle) * liberationRadius;
+  liberationNodes.forEach((node) => {
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.lineTo(x, y);
+    ctx.lineTo(node.x, node.y);
     ctx.stroke();
   });
 
   ctx.strokeStyle = "rgba(245, 242, 234, 0.3)";
-  oppressorLogics.forEach((_, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(oppressorLogics.length, 1) - time * 0.0001;
-    const x = cx + Math.cos(angle) * oppressorRadius;
-    const y = cy + Math.sin(angle) * oppressorRadius;
+  oppressorNodes.forEach((node) => {
     ctx.beginPath();
     ctx.moveTo(cx, cy);
-    ctx.lineTo(x, y);
+    ctx.lineTo(node.x, node.y);
     ctx.stroke();
+  });
+
+  mapClashes.forEach((clash) => {
+    const oppressor = oppressorNodes[clash.agentIndex];
+    const liberation = liberationNodes[clash.axiomIndex];
+    if (!oppressor || !liberation) return;
+    const midX = (oppressor.x + liberation.x) / 2;
+    const midY = (oppressor.y + liberation.y) / 2;
+    ctx.strokeStyle = "rgba(216, 165, 37, 0.78)";
+    ctx.lineWidth = 1.4 * ratio;
+    ctx.beginPath();
+    ctx.moveTo(oppressor.x, oppressor.y);
+    ctx.lineTo(liberation.x, liberation.y);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255, 253, 247, 0.92)";
+    ctx.font = `${10 * ratio}px system-ui`;
+    ctx.fillText(clash.label, midX + 5 * ratio, midY - 4 * ratio);
+    mapClashHitboxes.push({
+      ...clash,
+      x1: oppressor.x,
+      y1: oppressor.y,
+      x2: liberation.x,
+      y2: liberation.y
+    });
   });
 
   ctx.fillStyle = "#0b7256";
@@ -1164,11 +1341,7 @@ function drawCanvas(time = 0) {
   ctx.fillText("liberation logics", cx + 24 * ratio, cy - 8 * ratio);
   ctx.fillText("oppressor logics", cx + 24 * ratio, cy + 10 * ratio);
 
-  liberationLogics.forEach((axiom, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(liberationLogics.length, 1) + time * 0.00016;
-    const pulse = 4 * Math.sin(time * 0.003 + index);
-    const x = cx + Math.cos(angle) * (liberationRadius + pulse);
-    const y = cy + Math.sin(angle) * (liberationRadius + pulse);
+  liberationNodes.forEach(({ axiom, x, y }) => {
     ctx.fillStyle = "#20a06f";
     ctx.strokeStyle = "rgba(209, 255, 229, 0.72)";
     ctx.lineWidth = 1.5 * ratio;
@@ -1181,11 +1354,7 @@ function drawCanvas(time = 0) {
     ctx.fillText(axiom.title, x + 12 * ratio, y + 4 * ratio);
   });
 
-  oppressorLogics.forEach((agent, index) => {
-    const angle = (Math.PI * 2 * index) / Math.max(oppressorLogics.length, 1) - time * 0.0001;
-    const pulse = 5 * Math.cos(time * 0.0024 + index);
-    const x = cx + Math.cos(angle) * (oppressorRadius + pulse);
-    const y = cy + Math.sin(angle) * (oppressorRadius + pulse);
+  oppressorNodes.forEach(({ agent, x, y }) => {
     ctx.fillStyle = "#050505";
     ctx.strokeStyle = "rgba(245, 242, 234, 0.82)";
     ctx.lineWidth = 1.5 * ratio;
@@ -1201,11 +1370,30 @@ function drawCanvas(time = 0) {
   requestAnimationFrame(drawCanvas);
 }
 
+function showMapTooltip(event) {
+  if (!mapTooltip) return;
+  const rect = logicCanvas.getBoundingClientRect();
+  const ratioX = logicCanvas.width / rect.width;
+  const ratioY = logicCanvas.height / rect.height;
+  const x = (event.clientX - rect.left) * ratioX;
+  const y = (event.clientY - rect.top) * ratioY;
+  const hit = mapClashHitboxes.find((box) => distanceToSegment(x, y, box.x1, box.y1, box.x2, box.y2) < 10 * (window.devicePixelRatio || 1));
+  if (!hit) {
+    mapTooltip.style.display = "none";
+    return;
+  }
+  mapTooltip.style.display = "block";
+  mapTooltip.style.left = `${Math.min(event.clientX - rect.left + 12, rect.width - 24)}px`;
+  mapTooltip.style.top = `${Math.max(8, event.clientY - rect.top + 12)}px`;
+  mapTooltip.textContent = `${hit.label}: ${hit.text}`;
+}
+
 agentGrid.addEventListener("click", (event) => {
   const button = event.target.closest("[data-agent]");
   if (!button) return;
   agents[button.dataset.agent].active = !agents[button.dataset.agent].active;
   renderAgents();
+  redrawHyperlogicMap("agent logic map redrawn");
 });
 
 sampleButton.addEventListener("click", () => {
@@ -1224,16 +1412,34 @@ resetButton.addEventListener("click", () => {
   renderAgents();
 });
 
-paperInput.addEventListener("input", updateStats);
-logicMode.addEventListener("change", updateStats);
+paperInput.addEventListener("input", () => {
+  updateStats();
+  createMapClashes();
+});
+logicMode.addEventListener("change", () => {
+  updateStats();
+  redrawHyperlogicMap("logic mode map redrawn");
+});
 mockeryRange.addEventListener("input", updateStats);
-databaseSearch.addEventListener("input", renderDatabase);
+databaseSearch.addEventListener("input", () => {
+  renderDatabase();
+  redrawHyperlogicMap("database map redrawn");
+});
 saveOpenAIButton.addEventListener("click", saveOpenAISettings);
 forgetOpenAIButton.addEventListener("click", forgetOpenAISettings);
 useOpenAI.addEventListener("change", saveOpenAISettings);
 openaiModel.addEventListener("change", saveOpenAISettings);
 chatForm.addEventListener("submit", submitUserChat);
 responseButtons.forEach((button) => button.addEventListener("click", initiateAgentResponse));
+redrawMapButton.addEventListener("click", () => redrawHyperlogicMap());
+logicCanvas.addEventListener("mousemove", showMapTooltip);
+logicCanvas.addEventListener("mouseleave", () => {
+  if (mapTooltip) mapTooltip.style.display = "none";
+});
+yeaButton.addEventListener("click", () => setVerdict("yea"));
+nayButton.addEventListener("click", () => setVerdict("nay"));
+saveDebateButton.addEventListener("click", saveCurrentDebate);
+loadDebateButton.addEventListener("click", loadSavedDebate);
 copyButton.addEventListener("click", copyTranscript);
 clearButton.addEventListener("click", clearApp);
 window.addEventListener("resize", resizeCanvas);
@@ -1241,8 +1447,10 @@ window.addEventListener("resize", resizeCanvas);
 renderAgents();
 renderDatabase();
 renderChat();
+renderSavedDebates();
 loadOpenAISettings();
 resizeCanvas();
+createMapClashes();
 requestAnimationFrame(drawCanvas);
 
 window.summonFreedomAlliance = summonFreedomAlliance;
