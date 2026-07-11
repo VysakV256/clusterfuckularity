@@ -328,6 +328,7 @@ let mapRevision = 0;
 let mapClashes = [];
 let mapClashHitboxes = [];
 let introducedLogics = [];
+let mapUnlocked = false;
 
 const openAIStorageKeys = {
   apiKey: "clusterfuckularity.openai.apiKey",
@@ -676,6 +677,10 @@ function allLogicForms() {
 }
 
 function introduceLogicForm() {
+  if (!mapUnlocked) {
+    setActionStatus("open debate space before introducing map logic");
+    return;
+  }
   const context = buildDebateContext(latestChatText()).fullContext;
   const agentKey = debateAgentKeys()
     .map((key) => ({ key, score: scoreTextForTerms(context, agents[key].triggers) }))
@@ -696,6 +701,7 @@ function introduceLogicForm() {
 }
 
 function debateLogicForms(limit = 9) {
+  if (!mapUnlocked) return [];
   const context = normalizeWhitespace([paperInput.value || sample, recentTranscript(16), latestChatText()].join(" "));
   const forms = allLogicForms();
   const scored = forms
@@ -1142,6 +1148,7 @@ async function openDebateSpace() {
       await appendAgentTurn(selectedFreedomProfile(latestChatText()), latestChatText());
     }
     await appendAgentTurn(superAgentProfile(true), latestChatText());
+    mapUnlocked = true;
     redrawHyperlogicMap("debate map redrawn");
     focusDebateSpace();
     setActionStatus("openai debate open");
@@ -1178,6 +1185,7 @@ async function submitUserChat(event) {
 
   try {
     await appendAllianceSequence(text, true);
+    mapUnlocked = true;
     redrawHyperlogicMap();
     setActionStatus("openai agent replies generated");
   } catch (error) {
@@ -1209,6 +1217,7 @@ async function initiateAgentResponse(event) {
       await appendAgentTurn(selectedFreedomProfile(prompt), prompt);
       await appendAgentTurn(superAgentProfile(true), latestChatText());
     }
+    mapUnlocked = true;
     redrawHyperlogicMap();
     setActionStatus(responseMode === "oppressor" ? "oppressor response generated" : "freedom alliance response generated");
   } catch (error) {
@@ -1286,6 +1295,7 @@ function loadSavedDebate() {
   freedomArgument.value = record.freedomArgument || "";
   databaseSearch.value = record.databaseSearch || "";
   chatTurns = Array.isArray(record.chatTurns) ? record.chatTurns : [];
+  mapUnlocked = chatTurns.some((turn) => ["praise", "ally", "utopian"].includes(turn.kind));
   reportOutput.innerHTML = record.reportHtml || `<p class="empty-state">Saved debate loaded.</p>`;
   setVerdict(record.verdict || "");
   renderChat();
@@ -1300,6 +1310,10 @@ function clearApp() {
   databaseSearch.value = "";
   chatInput.value = "";
   chatTurns = [];
+  mapUnlocked = false;
+  introducedLogics = [];
+  mapClashes = [];
+  mapClashHitboxes = [];
   setVerdict("");
   reportOutput.innerHTML = `<p class="empty-state">Load or paste an AI paper, choose the praise agents, then create a standalone freedom alliance report.</p>`;
   renderChat();
@@ -1327,6 +1341,11 @@ function clashText(agent, axiom) {
 }
 
 function createMapClashes() {
+  if (!mapUnlocked) {
+    mapClashes = [];
+    mapClashHitboxes = [];
+    return;
+  }
   const axioms = debateLogicForms();
   const agentList = debateAgentKeys().map((key) => agents[key]);
   const context = buildDebateContext(latestChatText()).fullContext;
@@ -1348,6 +1367,13 @@ function createMapClashes() {
 }
 
 function redrawHyperlogicMap(message = "map redrawn") {
+  if (!mapUnlocked) {
+    mapClashes = [];
+    mapClashHitboxes = [];
+    if (mapTooltip) mapTooltip.style.display = "none";
+    setActionStatus("open debate space to generate map");
+    return;
+  }
   mapRevision += 1;
   createMapClashes();
   if (mapTooltip) mapTooltip.style.display = "none";
@@ -1370,6 +1396,18 @@ function drawCanvas(time = 0) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#121312";
   ctx.fillRect(0, 0, width, height);
+  mapClashHitboxes = [];
+
+  if (!mapUnlocked) {
+    ctx.fillStyle = "rgba(245, 242, 234, 0.92)";
+    ctx.font = `${18 * ratio}px system-ui`;
+    ctx.fillText("open debate space to generate the logic map", 24 * ratio, height * 0.45);
+    ctx.fillStyle = "rgba(245, 242, 234, 0.62)";
+    ctx.font = `${12 * ratio}px system-ui`;
+    ctx.fillText("the map will draw only logics used by the debate", 24 * ratio, height * 0.45 + 24 * ratio);
+    requestAnimationFrame(drawCanvas);
+    return;
+  }
 
   const liberationLogics = debateLogicForms();
   const oppressorLogics = debateAgentKeys().map((key) => agents[key]);
@@ -1378,7 +1416,6 @@ function drawCanvas(time = 0) {
   const liberationRadius = Math.min(width, height) * 0.25;
   const oppressorRadius = Math.min(width, height) * 0.39;
   const rotation = mapRevision * 0.38;
-  mapClashHitboxes = [];
   if (!mapClashes.length) createMapClashes();
   const liberationNodes = liberationLogics.map((axiom, index) => {
     const angle = (Math.PI * 2 * index) / Math.max(liberationLogics.length, 1) + time * 0.00016 + rotation;
@@ -1566,7 +1603,6 @@ renderChat();
 renderSavedDebates();
 loadOpenAISettings();
 resizeCanvas();
-createMapClashes();
 requestAnimationFrame(drawCanvas);
 
 window.summonFreedomAlliance = summonFreedomAlliance;
