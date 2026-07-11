@@ -695,6 +695,21 @@ function introduceLogicForm() {
   redrawHyperlogicMap("new logic introduced");
 }
 
+function debateLogicForms(limit = 9) {
+  const context = normalizeWhitespace([paperInput.value || sample, recentTranscript(16), latestChatText()].join(" "));
+  const forms = allLogicForms();
+  const scored = forms
+    .map((logic) => ({
+      logic,
+      score: scoreTextForTerms(context, [...logic.tags, logic.title]) + (logic.source === "invented" ? 0.5 : 0)
+    }))
+    .sort((a, b) => b.score - a.score);
+  const used = scored.filter((item) => item.score > 0).map((item) => item.logic);
+  const fallback = scored.slice(0, Math.min(4, scored.length)).map((item) => item.logic);
+  const merged = [...introducedLogics, ...(used.length ? used : fallback)];
+  return [...new Map(merged.map((logic) => [logic.id, logic])).values()].slice(0, limit);
+}
+
 function activeAxioms() {
   const query = databaseSearch.value.trim().toLowerCase();
   const forms = allLogicForms();
@@ -776,9 +791,14 @@ function openAIRequiredMessage(error) {
   return chatMessage("utopian", "Freedom Alliance", `OpenAI API generation is required for agent statements${detail}. Enable "Use OpenAI agents", save an API key, and retry so every agent can respond from the full paper, chat transcript, and its own behavioral profile.`);
 }
 
-function selectedOppressorProfile(prompt = "") {
+function recentSpeakers(limit = 4) {
+  return chatTurns.slice(-limit).map((turn) => turn.speaker);
+}
+
+function selectedOppressorProfile(prompt = "", excludedSpeakers = recentSpeakers()) {
   const context = buildDebateContext(prompt).fullContext;
-  const key = debateAgentKeys()
+  const candidateKeys = debateAgentKeys().filter((agentKey) => !excludedSpeakers.includes(agents[agentKey].name));
+  const key = (candidateKeys.length ? candidateKeys : debateAgentKeys())
     .map((agentKey) => ({ key: agentKey, score: scoreTextForTerms(context, agents[agentKey].triggers) }))
     .sort((a, b) => b.score - a.score)[0]?.key || sampleOne(debateAgentKeys());
   const agent = agents[key];
@@ -795,13 +815,15 @@ function selectedOppressorProfile(prompt = "") {
     ],
     triggers: agent.triggers,
     praiseTemplateToAvoidRepeating: agent.praise,
-    knownWeakness: agent.weakness
+    knownWeakness: agent.weakness,
+    pluralityRule: "Do not continue a one-to-one back-and-forth with the same recent speaker. Make a distinct intervention from this agent's own priors."
   };
 }
 
-function selectedFreedomProfile(prompt = "") {
+function selectedFreedomProfile(prompt = "", excludedSpeakers = recentSpeakers()) {
   const context = buildDebateContext(prompt).fullContext;
-  const ally = liberationAgents
+  const candidateAgents = liberationAgents.filter((agent) => !excludedSpeakers.includes(agent.name));
+  const ally = (candidateAgents.length ? candidateAgents : liberationAgents)
     .map((agent) => ({ agent, score: scoreTextForTerms(context, words(`${agent.stance} ${agent.move}`)) }))
     .sort((a, b) => b.score - a.score)[0]?.agent || sampleOne(liberationAgents);
   return {
@@ -815,7 +837,14 @@ function selectedFreedomProfile(prompt = "") {
       "Uses the logic database to turn vague claims into accountable obligations."
     ],
     moveTemplateToAvoidRepeating: ally.move,
-    logicalMakeup: getAxiomPayload()
+    logicalMakeup: debateLogicForms().map((logic) => ({
+      id: logic.id,
+      title: logic.title,
+      tags: logic.tags,
+      text: logic.text,
+      source: logic.source || "database"
+    })),
+    pluralityRule: "Attack the oppression in the immediately preceding claim directly, then open the debate to a different liberation perspective. Do not repeat slogans."
   };
 }
 
@@ -826,11 +855,17 @@ function superAgentProfile(finalWord = false) {
     name: superAgent.name,
     behavioralMakeup: "Synthesizes infinite logic, hyperlogic, user arguments, and freedom technology critique.",
     priors: superAgent.principles,
-    logicalMakeup: getAxiomPayload(),
+    logicalMakeup: debateLogicForms().map((logic) => ({
+      id: logic.id,
+      title: logic.title,
+      tags: logic.tags,
+      text: logic.text,
+      source: logic.source || "database"
+    })),
     operatingMode: selectedLogicName(),
     mockery: Number(mockeryRange.value),
     finalWord,
-    concludingDuty: finalWord ? "This is the final word. Summarize the debate, declare the liberation stakes, and leave the user a continuing missive of enlightenment and liberation." : ""
+    concludingDuty: finalWord ? "This is the final word. Summarize the debate, declare the liberation stakes, directly name the oppression exposed, and leave the user a continuing missive of enlightenment and liberation." : ""
   };
 }
 
@@ -864,6 +899,8 @@ The speaker must be the specified agent. The kind must be "${agentProfile.kind}"
 Use the whole paper, previous chat transcript, latest user turn, and the agent's behavioral/logical makeup.
 Do not use canned phrasing from the profile fields. Do not summarize generically.
 Actively engage the paper content and chat content: name the broader pattern, cite or paraphrase the relevant evidence, explain how this agent's priors interpret it, and directly respond to the most relevant preceding agent or user claim.
+Freedom Alliance agents must directly attack the oppression in the prior claim: identify the control move, name who loses agency, and counter with the specific activated logic supplied in agentProfile.logicalMakeup.
+Enforce the plurality rule in agentProfile.pluralityRule: do not stage a repetitive back-and-forth between the same agents, and do not repeat slogans from previous turns.
 If agentProfile.finalWord is true, the response must be the freedom side's final word: summarize the clash, reach a liberation-oriented conclusion, and leave the user a continuing missive of enlightenment and liberation.`;
 
   updateOpenAIStatus(`calling ${agentProfile.name}`, "online");
@@ -1290,7 +1327,7 @@ function clashText(agent, axiom) {
 }
 
 function createMapClashes() {
-  const axioms = activeAxioms();
+  const axioms = debateLogicForms();
   const agentList = debateAgentKeys().map((key) => agents[key]);
   const context = buildDebateContext(latestChatText()).fullContext;
   const sortedAgents = agentList
@@ -1334,7 +1371,7 @@ function drawCanvas(time = 0) {
   ctx.fillStyle = "#121312";
   ctx.fillRect(0, 0, width, height);
 
-  const liberationLogics = activeAxioms();
+  const liberationLogics = debateLogicForms();
   const oppressorLogics = debateAgentKeys().map((key) => agents[key]);
   const cx = width * 0.5;
   const cy = height * 0.5;
