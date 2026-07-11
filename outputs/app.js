@@ -417,6 +417,66 @@ function extractOpenAIText(data) {
   return chunks.join("\n").trim();
 }
 
+function parseJsonFromOpenAI(data) {
+  const text = extractOpenAIText(data);
+  if (!text) throw new Error("OpenAI returned an empty response.");
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      return JSON.parse(text.slice(start, end + 1));
+    }
+    throw new Error("OpenAI returned non-JSON output.");
+  }
+}
+
+function jsonTextFormat(name, schema) {
+  return {
+    format: {
+      type: "json_schema",
+      name,
+      strict: true,
+      schema
+    }
+  };
+}
+
+const agentTurnSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["kind", "speaker", "text"],
+  properties: {
+    kind: { type: "string", enum: ["praise", "ally", "utopian"] },
+    speaker: { type: "string" },
+    text: { type: "string" }
+  }
+};
+
+const reportSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["status", "reportCards"],
+  properties: {
+    status: { type: "string" },
+    reportCards: {
+      type: "array",
+      minItems: 5,
+      maxItems: 9,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "body"],
+        properties: {
+          title: { type: "string" },
+          body: { type: "string" }
+        }
+      }
+    }
+  }
+};
+
 function words(text) {
   return text.trim().match(/\b[\w-]+\b/g) || [];
 }
@@ -691,6 +751,7 @@ Actively engage the paper content and chat content: name the broader pattern, ci
         { role: "developer", content: openAIDeveloperPrompt },
         { role: "user", content: `${instruction}\n\nContext JSON:\n${JSON.stringify(context, null, 2)}` }
       ],
+      text: jsonTextFormat("agent_turn", agentTurnSchema),
       max_output_tokens: 1100
     })
   });
@@ -701,18 +762,17 @@ Actively engage the paper content and chat content: name the broader pattern, ci
     throw new Error(data.error?.message || `OpenAI returned ${response.status}`);
   }
 
-  const text = extractOpenAIText(data);
   try {
-    const parsed = JSON.parse(text);
+    const parsed = parseJsonFromOpenAI(data);
     updateOpenAIStatus("openai ready", "online");
     return chatMessage(
       ["praise", "ally", "utopian"].includes(parsed.kind) ? parsed.kind : agentProfile.kind,
       parsed.speaker || agentProfile.name,
       parsed.text || ""
     );
-  } catch {
+  } catch (error) {
     updateOpenAIStatus("json error", "error");
-    throw new Error("OpenAI returned non-JSON output.");
+    throw error;
   }
 }
 
@@ -784,6 +844,20 @@ Every turn must analyze the paper as a whole in light of the preceding chat conv
         { role: "developer", content: openAIDeveloperPrompt },
         { role: "user", content: `${formatInstruction}\n\nContext JSON:\n${JSON.stringify(context, null, 2)}` }
       ],
+      text: jsonTextFormat(mode === "report" ? "freedom_alliance_report" : "debate_turns", mode === "report" ? reportSchema : {
+        type: "object",
+        additionalProperties: false,
+        required: ["status", "chatTurns"],
+        properties: {
+          status: { type: "string" },
+          chatTurns: {
+            type: "array",
+            minItems: 1,
+            maxItems: 10,
+            items: agentTurnSchema
+          }
+        }
+      }),
       max_output_tokens: mode === "report" ? 2400 : 2200
     })
   });
@@ -794,14 +868,13 @@ Every turn must analyze the paper as a whole in light of the preceding chat conv
     throw new Error(data.error?.message || `OpenAI returned ${response.status}`);
   }
 
-  const text = extractOpenAIText(data);
   try {
-    const parsed = JSON.parse(text);
+    const parsed = parseJsonFromOpenAI(data);
     updateOpenAIStatus("openai ready", "online");
     return parsed;
-  } catch {
-    updateOpenAIStatus("json fallback", "error");
-    throw new Error("OpenAI returned non-JSON output.");
+  } catch (error) {
+    updateOpenAIStatus("json error", "error");
+    throw error;
   }
 }
 
