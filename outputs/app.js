@@ -407,19 +407,37 @@ function getOpenAISettings() {
 
 function extractOpenAIText(data) {
   if (typeof data.output_text === "string") return data.output_text;
+  if (data.output_parsed) return JSON.stringify(data.output_parsed);
   const chunks = [];
   (data.output || []).forEach((item) => {
+    if (typeof item.text === "string") chunks.push(item.text);
+    if (item.parsed) chunks.push(JSON.stringify(item.parsed));
     (item.content || []).forEach((content) => {
+      if (typeof content === "string") chunks.push(content);
       if (typeof content.text === "string") chunks.push(content.text);
       if (typeof content.output_text === "string") chunks.push(content.output_text);
+      if (typeof content.refusal === "string") chunks.push(JSON.stringify({ refusal: content.refusal }));
+      if (content.parsed) chunks.push(JSON.stringify(content.parsed));
+      if (content.json) chunks.push(JSON.stringify(content.json));
     });
   });
   return chunks.join("\n").trim();
 }
 
 function parseJsonFromOpenAI(data) {
+  if (data.status === "incomplete") {
+    const reason = data.incomplete_details?.reason || "unknown reason";
+    throw new Error(`OpenAI response was incomplete: ${reason}. Try a shorter paper/chat or a higher output token budget.`);
+  }
+  const refusal = data.output?.flatMap((item) => item.content || []).find((content) => content.type === "refusal" || content.refusal);
+  if (refusal) {
+    throw new Error(`OpenAI refused the request: ${refusal.refusal || refusal.text || "policy refusal"}`);
+  }
   const text = extractOpenAIText(data);
-  if (!text) throw new Error("OpenAI returned an empty response.");
+  if (!text) {
+    const reason = data.incomplete_details?.reason || data.status || "no output content";
+    throw new Error(`OpenAI returned an empty response: ${reason}.`);
+  }
   try {
     return JSON.parse(text);
   } catch {
@@ -476,6 +494,19 @@ const reportSchema = {
     }
   }
 };
+
+function openAIRequestBody(settings, input, schemaName, schema, maxOutputTokens) {
+  const body = {
+    model: settings.model,
+    input,
+    text: jsonTextFormat(schemaName, schema),
+    max_output_tokens: maxOutputTokens
+  };
+  if (/^gpt-5/i.test(settings.model)) {
+    body.reasoning = { effort: "minimal" };
+  }
+  return body;
+}
 
 function words(text) {
   return text.trim().match(/\b[\w-]+\b/g) || [];
@@ -745,15 +776,16 @@ Actively engage the paper content and chat content: name the broader pattern, ci
       "Authorization": `Bearer ${settings.apiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model: settings.model,
-      input: [
+    body: JSON.stringify(openAIRequestBody(
+      settings,
+      [
         { role: "developer", content: openAIDeveloperPrompt },
         { role: "user", content: `${instruction}\n\nContext JSON:\n${JSON.stringify(context, null, 2)}` }
       ],
-      text: jsonTextFormat("agent_turn", agentTurnSchema),
-      max_output_tokens: 1100
-    })
+      "agent_turn",
+      agentTurnSchema,
+      3200
+    ))
   });
 
   const data = await response.json().catch(() => ({}));
@@ -838,13 +870,14 @@ Every turn must analyze the paper as a whole in light of the preceding chat conv
       "Authorization": `Bearer ${settings.apiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      model: settings.model,
-      input: [
+    body: JSON.stringify(openAIRequestBody(
+      settings,
+      [
         { role: "developer", content: openAIDeveloperPrompt },
         { role: "user", content: `${formatInstruction}\n\nContext JSON:\n${JSON.stringify(context, null, 2)}` }
       ],
-      text: jsonTextFormat(mode === "report" ? "freedom_alliance_report" : "debate_turns", mode === "report" ? reportSchema : {
+      mode === "report" ? "freedom_alliance_report" : "debate_turns",
+      mode === "report" ? reportSchema : {
         type: "object",
         additionalProperties: false,
         required: ["status", "chatTurns"],
@@ -857,9 +890,9 @@ Every turn must analyze the paper as a whole in light of the preceding chat conv
             items: agentTurnSchema
           }
         }
-      }),
-      max_output_tokens: mode === "report" ? 2400 : 2200
-    })
+      },
+      mode === "report" ? 6400 : 4200
+    ))
   });
 
   const data = await response.json().catch(() => ({}));
