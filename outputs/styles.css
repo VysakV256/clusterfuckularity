@@ -209,12 +209,29 @@ textarea {
   position: relative;
 }
 
+.visual-panel.is-maximized {
+  position: fixed;
+  inset: 14px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+
+.visual-panel.is-maximized .map-frame {
+  flex: 1;
+  min-height: 0;
+}
+
 #logicCanvas {
   display: block;
   width: 100%;
   height: 220px;
   border: 1px solid var(--line);
   background: #121312;
+}
+
+.visual-panel.is-maximized #logicCanvas {
+  height: 100%;
 }
 
 .map-tooltip {
@@ -389,6 +406,13 @@ button:focus-visible {
   color: #2d2e31;
   font-size: 0.82rem;
   line-height: 1.42;
+}
+
+.axiom-card .logic-source {
+  color: var(--green);
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
 }
 
 .tag-row {

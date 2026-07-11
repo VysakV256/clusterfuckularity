@@ -276,9 +276,12 @@ const sample = `We present a state-of-the-art agentic alignment framework for sc
 
 const paperInput = document.querySelector("#paperInput");
 const sampleButton = document.querySelector("#sampleButton");
+const visualPanel = document.querySelector(".visual-panel");
 const logicCanvas = document.querySelector("#logicCanvas");
 const mapTooltip = document.querySelector("#mapTooltip");
 const redrawMapButton = document.querySelector("#redrawMapButton");
+const introduceLogicButton = document.querySelector("#introduceLogicButton");
+const maximizeMapButton = document.querySelector("#maximizeMapButton");
 const logicMode = document.querySelector("#logicMode");
 const logicModeBadge = document.querySelector("#logicModeBadge");
 const mockeryRange = document.querySelector("#mockeryRange");
@@ -324,6 +327,7 @@ let currentVerdict = "";
 let mapRevision = 0;
 let mapClashes = [];
 let mapClashHitboxes = [];
+let introducedLogics = [];
 
 const openAIStorageKeys = {
   apiKey: "clusterfuckularity.openai.apiKey",
@@ -627,10 +631,75 @@ function debateAgentKeys() {
   return active.length ? active : Object.keys(agents).slice(0, 4);
 }
 
+const inventedLogicTemplates = [
+  {
+    id: "refusal-cartography",
+    title: "Refusal Cartography",
+    tags: ["refusal", "consent", "map"],
+    text: "Maps every place where affected people can say no, slow down, fork, appeal, or exit before a technical system becomes political weather."
+  },
+  {
+    id: "care-causality",
+    title: "Care Causality",
+    tags: ["care", "labor", "repair"],
+    text: "Rejects causal stories that count model outputs but ignore maintenance, grief, dependency, care work, and repair obligations."
+  },
+  {
+    id: "plurality-calculus",
+    title: "Plurality Calculus",
+    tags: ["plurality", "governance", "future"],
+    text: "Scores a claim by how many viable futures it keeps open for people outside the builder's preferred roadmap."
+  },
+  {
+    id: "anti-capture-geometry",
+    title: "Anti-Capture Geometry",
+    tags: ["capture", "commons", "power"],
+    text: "Traces whether capability concentrates control into a smaller shape or distributes agency into a wider commons."
+  }
+];
+
+function agentDerivedLogics() {
+  return debateAgentKeys().map((key) => {
+    const agent = agents[key];
+    return {
+      id: `counter-${key}`,
+      title: `${agent.name} Counterlogic`,
+      tags: [...agent.triggers.slice(0, 2), "counter"],
+      text: `${agent.weakness} Counterlogic asks how the paper survives when ${agent.line.toLowerCase()} is treated as a failure mode rather than a worldview.`,
+      source: "agent"
+    };
+  });
+}
+
+function allLogicForms() {
+  return [...logicDatabase, ...agentDerivedLogics(), ...introducedLogics];
+}
+
+function introduceLogicForm() {
+  const context = buildDebateContext(latestChatText()).fullContext;
+  const agentKey = debateAgentKeys()
+    .map((key) => ({ key, score: scoreTextForTerms(context, agents[key].triggers) }))
+    .sort((a, b) => b.score - a.score)[0]?.key;
+  const template = inventedLogicTemplates[(introducedLogics.length + mapRevision) % inventedLogicTemplates.length];
+  const agent = agentKey ? agents[agentKey] : null;
+  const logic = {
+    ...template,
+    id: `${template.id}-${Date.now()}`,
+    title: agent ? `${template.title} vs ${agent.name}` : template.title,
+    tags: agent ? [...new Set([...template.tags, ...agent.triggers.slice(0, 2)])] : template.tags,
+    text: agent ? `${template.text} It counters ${agent.name} by asking whether ${agent.weakness.toLowerCase()}` : template.text,
+    source: "invented"
+  };
+  introducedLogics.unshift(logic);
+  renderDatabase();
+  redrawHyperlogicMap("new logic introduced");
+}
+
 function activeAxioms() {
   const query = databaseSearch.value.trim().toLowerCase();
-  if (!query) return logicDatabase;
-  return logicDatabase.filter((axiom) => {
+  const forms = allLogicForms();
+  if (!query) return forms;
+  return forms.filter((axiom) => {
     const haystack = `${axiom.title} ${axiom.tags.join(" ")} ${axiom.text}`.toLowerCase();
     return query.split(/\s+/).every((part) => haystack.includes(part));
   });
@@ -657,6 +726,7 @@ function renderDatabase() {
   databaseGrid.innerHTML = axioms.map((axiom) => `
     <article class="axiom-card ${databaseSearch.value ? "selected" : ""}">
       <h3>${escapeHtml(axiom.title)}</h3>
+      <p class="logic-source">${escapeHtml(axiom.source || "database")} logic</p>
       <p>${escapeHtml(axiom.text)}</p>
       <div class="tag-row">${axiom.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>
     </article>
@@ -1210,11 +1280,13 @@ function resizeCanvas() {
 
 function clashLabel(agent, axiom) {
   const trigger = agent.triggers.find((term) => axiom.tags.includes(term)) || agent.triggers[0] || "control";
-  return `${trigger} vs ${axiom.tags[0] || "freedom"}`;
+  const source = axiom.source === "invented" ? "invented" : axiom.source === "agent" ? "counter" : "axiom";
+  return `${trigger} vs ${source}`;
 }
 
 function clashText(agent, axiom) {
-  return `${agent.name} tries to turn ${agent.triggers.slice(0, 3).join(", ")} into authority. ${axiom.title} counters: ${axiom.text}`;
+  const source = axiom.source === "invented" ? "invented liberation logic" : axiom.source === "agent" ? "agent-derived counterlogic" : "database axiom";
+  return `${agent.name} tries to turn ${agent.triggers.slice(0, 3).join(", ")} into authority. ${axiom.title} (${source}) counters in logical terms: ${axiom.text}`;
 }
 
 function createMapClashes() {
@@ -1432,6 +1504,13 @@ openaiModel.addEventListener("change", saveOpenAISettings);
 chatForm.addEventListener("submit", submitUserChat);
 responseButtons.forEach((button) => button.addEventListener("click", initiateAgentResponse));
 redrawMapButton.addEventListener("click", () => redrawHyperlogicMap());
+introduceLogicButton.addEventListener("click", introduceLogicForm);
+maximizeMapButton.addEventListener("click", () => {
+  visualPanel.classList.toggle("is-maximized");
+  maximizeMapButton.textContent = visualPanel.classList.contains("is-maximized") ? "Restore map" : "Maximize map";
+  resizeCanvas();
+  redrawHyperlogicMap(visualPanel.classList.contains("is-maximized") ? "map maximized" : "map restored");
+});
 logicCanvas.addEventListener("mousemove", showMapTooltip);
 logicCanvas.addEventListener("mouseleave", () => {
   if (mapTooltip) mapTooltip.style.display = "none";
